@@ -79,5 +79,8 @@ def test_terrain_is_bilinear_and_exact_on_a_plane(tmp_path):
     zz = t.elevation_xy(np.array([x_ll + 2600.0, x_ll + 9000.0]), np.array([y_ll + 300.0, y_ll + 300.0]))
     assert zz[0] == pytest.approx(float(plane(x_ll + 2600.0, y_ll + 300.0)), abs=1e-3)
     assert np.isnan(zz[1])
+    # Between the last cell centre of one tile and the first of the next: no hole.
+    seam = t.elevation_xy(np.array([x_ll + 1999.0, x_ll + 2001.0]), np.array([y_ll + 300.0, y_ll + 300.0]))
+    assert np.allclose(seam, plane(np.array([x_ll + 1999.0, x_ll + 2001.0]), y_ll + 300.0), atol=0.1)
     assert (tmp_path / "a.npy").exists()  # parsed once, cached
     assert Terrain(tmp_path).elevation(np.array([lat]), np.array([lon]))[0] == pytest.approx(z[0])

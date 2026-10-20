@@ -27,8 +27,10 @@ class Tile:
 
     @property
     def bounds(self) -> tuple[float, float, float, float]:
-        """(xmin, ymin, xmax, ymax) of the cell centres."""
-        return (self.x0, self.y0, self.x0 + (self.ncols - 1) * self.cell, self.y0 + (self.nrows - 1) * self.cell)
+        """(xmin, ymin, xmax, ymax) of the cells' outer edges (neighbouring tiles meet there)."""
+        h = self.cell / 2
+        return (self.x0 - h, self.y0 - h, self.x0 + (self.ncols - 1) * self.cell + h,
+                self.y0 + (self.nrows - 1) * self.cell + h)
 
 
 def read_header(path: Path) -> Tile:
@@ -107,8 +109,9 @@ class Terrain:
 
 
 def _bilinear(grid: np.ndarray, t: Tile, x, y):
-    col = (x - t.x0) / t.cell
-    row_from_bottom = (y - t.y0) / t.cell
+    # Within half a cell of the tile's edge, the edge value is held (no extrapolation).
+    col = np.clip((x - t.x0) / t.cell, 0.0, t.ncols - 1.0)
+    row_from_bottom = np.clip((y - t.y0) / t.cell, 0.0, t.nrows - 1.0)
     c0 = np.clip(np.floor(col).astype(int), 0, t.ncols - 2)
     r0 = np.clip(np.floor(row_from_bottom).astype(int), 0, t.nrows - 2)
     fc = col - c0
