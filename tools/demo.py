@@ -1,13 +1,16 @@
 """Record the demo video from z2analyzer's own pages.
 
-    python tools/demo.py --plan plan.html --review review.html --out demo/ [--voice voice/] [--tempo 1.05]
+    python tools/demo.py --plan plan.html --review review.html --plan-text plan.txt --review-text review.txt \
+        --out demo/ [--voice voice/] [--tempo 1.05]
 
-Each shot is one of the tool's pages (plan, review) or a title card,
-photographed at 1920×1080 by a headless Chromium with the scene's highlight
-drawn in. ffmpeg turns the shots into a video with a slow zoom and
-crossfades, each scene paced on its voice-over clip (voice/<scene>.mp3) when
-there is one. Writes z2analyzer-demo.mp4 and z2analyzer-demo.srt (captions).
-Needs chromium (or google-chrome), ffmpeg and ffprobe.
+Each shot is one of the tool's pages (plan, review), a terminal (the command
+as typed and what the tool printed when it wrote that page: `--plan-text`,
+`--review-text`) or a title card, photographed at 1920×1080 by a headless
+Chromium with the scene's highlight drawn in. ffmpeg turns the shots into a
+video with a slow zoom and crossfades, each scene paced on its voice-over
+clip (voice/<scene>.mp3) when there is one. Writes z2analyzer-demo.mp4 and
+z2analyzer-demo.srt (captions). Needs chromium (or google-chrome), ffmpeg and
+ffprobe.
 """
 
 from __future__ import annotations
@@ -49,6 +52,13 @@ html, body { height:100%; } body { display:grid; place-items:center; background:
 .board p { font:500 22px/1.4 var(--ui); color:var(--muted); margin:16px 0 0; }
 .board .split { height:150px; border-radius:20px; } .board .split div { min-width:150px; } .board .split b { font-size:76px; }
 .board .split span { font-size:20px; white-space:nowrap; }
+.term { width:1180px; } .term h1 { font:800 50px/1 var(--display); text-transform:uppercase; margin:0; }
+.term .sub { font:500 21px/1.3 var(--ui); color:var(--muted); margin:6px 0 18px; }
+.term .win { background:#0c1230; border-radius:16px; overflow:hidden; box-shadow:0 18px 50px rgba(12,18,48,.25); }
+.term .bar { display:flex; gap:9px; padding:13px 18px; background:#1b2350; } .term .bar i { width:12px; height:12px; border-radius:50%; background:#3d4678; }
+.term pre { margin:0; padding:18px 26px 22px; white-space:pre-wrap; color:#8f99c2;
+  font:500 13.5px/1.5 "DejaVu Sans Mono", "Liberation Mono", Menlo, Consolas, monospace; }
+.term .cmd { color:#fff; } .term .hi { color:#fff; font-size:19px; font-weight:700; }
 """
 
 
@@ -90,6 +100,26 @@ def card(kind: str, spec: dict, skyline_svg: str) -> str:
         split = "".join(f'<div style="flex:{v};background:{c}"><b>{v}</b><span>{lab}</span></div>' for v, c, lab in parts)
         body = (f'<div class="board"><h1>{e(spec["title"])}</h1><div class="split">{split}</div>'
                 f'<p>Each minute above Zone 2 goes to one cause: the road, the heat, or me.</p></div>')
+    return doc(body)
+
+
+def terminal(spec: dict, printed: str) -> str:
+    """The command as typed, then what the tool printed, its two-line verdict lit."""
+    e = html.escape
+    cmd = "\n".join(f'<span class="cmd">{"$ " if k == 0 else "      "}{e(c)}</span>' for k, c in enumerate(spec["command"]))
+    out, lit = [], 0
+    for line in printed.rstrip("\n").splitlines():
+        if line and not line.startswith("page written") and lit < 2:  # the verdict comes first, in two lines
+            out.append(f'<span class="hi">{e(line)}</span>')
+            lit += 1
+        else:
+            out.append(e(line))
+    body = (f'<div class="term"><h1>{e(spec["title"])}</h1><p class="sub">{e(spec["sub"])}</p>'
+            f'<div class="win"><div class="bar"><i></i><i></i><i></i></div><pre>{cmd}\n' + "\n".join(out) + "</pre></div></div>")
+    return doc(body)
+
+
+def doc(body: str) -> str:
     return (f"<!doctype html><html><head><meta charset='utf-8'><style>{fonts_css()}{CSS}{CARD_CSS}</style></head>"
             f"<body>{body}</body></html>")
 
@@ -133,6 +163,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--plan", required=True, help="page written by `z2analyzer plan --html`")
     ap.add_argument("--review", required=True, help="page written by `z2analyzer review --html`")
+    ap.add_argument("--plan-text", help="what `z2analyzer plan` printed when it wrote that page")
+    ap.add_argument("--review-text", help="what `z2analyzer review` printed when it wrote that page")
     ap.add_argument("--out", required=True)
     ap.add_argument("--voice", help="folder of <scene>.mp3 voice-over clips")
     ap.add_argument("--tempo", type=float, default=1.0, help="play the voice this much faster")
@@ -142,6 +174,7 @@ def main() -> int:
     shots = out / "shots"
     shots.mkdir(parents=True, exist_ok=True)
     pages = {"plan": Path(a.plan), "review": Path(a.review)}
+    texts = {"plan": a.plan_text, "review": a.review_text}
     voice = Path(a.voice) if a.voice else None
 
     plan_ = []
@@ -150,6 +183,10 @@ def main() -> int:
         page = shots / f"{sc['id']}.html"
         if kind == "card":
             page.write_text(card(view, conf["cards"][view], skyline_of(pages["plan"].read_text(encoding="utf-8"))), encoding="utf-8")
+        elif kind == "term":
+            if not texts[view]:
+                raise SystemExit(f"scene {sc['id']} needs --{view}-text")
+            page.write_text(terminal(conf["terms"][view], Path(texts[view]).read_text(encoding="utf-8")), encoding="utf-8")
         else:
             page.write_text(page_variant(pages[kind], view, sc.get("row")), encoding="utf-8")
         png = shots / f"{sc['id']}.png"
