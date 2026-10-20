@@ -23,6 +23,9 @@ CREDITS = ("Built with PriorLabs-TabPFN · terrain: IGN RGE ALTI® (Licence Ouve
            "© OpenStreetMap contributors (ODbL) · weather: Open-Meteo, Météo-France models (CC BY 4.0)")
 
 
+LONGEST = ' class="longest"'
+
+
 def pct(x: float) -> str:
     return f"{100 * x:.0f} %"
 
@@ -249,9 +252,11 @@ def write_plan_html(path, p, name: str, cond: str, prof, watts: bool = False) ->
     marks = [(x.start_m / 1000 + x.length_m / 2000, f"{100 * x.mean_grade:.0f} % · {times(x.max_ratio)}")
              for x in sorted(p.passages, key=lambda x: -x.length_m)[:4]]
     keep = trim_mask(prof.dist, 2000.0) & np.isfinite(prof.lat)
+    longest = max(p.passages, key=lambda x: x.length_m) if p.passages else None
     rows = "".join(
-        f"<tr><td>km {x.start_m / 1000:.1f}</td><td>{x.length_m / 1000:.1f} km</td><td>{100 * x.mean_grade:.1f} %</td>"
-        f"<td>{100 * x.max_grade:.1f} %</td><td class='x'>{times(x.max_ratio)}</td><td>{hm(x.time_s)}</td></tr>" for x in p.passages)
+        f"<tr{LONGEST if x is longest else ''}><td>km {x.start_m / 1000:.1f}</td><td>{x.length_m / 1000:.1f} km</td>"
+        f"<td>{100 * x.mean_grade:.1f} %</td><td>{100 * x.max_grade:.1f} %</td><td class='x'>{times(x.max_ratio)}</td>"
+        f"<td>{hm(x.time_s)}</td></tr>" for x in p.passages)
     table = (f'<div class="card"><h2>Where Zone 2 is impossible</h2><table><tr><th>From</th><th>Length</th><th>Grade</th>'
              f'<th>Steepest</th><th>Needs</th><th>At your slowest</th></tr>{rows}</table>'
              f'<p class="note">Needs: the power of your slowest pace there, as a multiple of your Zone 2 ceiling.</p></div>'
