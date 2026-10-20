@@ -56,7 +56,8 @@ def main(argv=None) -> int:
     s.add_argument("--z2-top", type=float, required=True, help="top of your Zone 2, bpm")
     s.add_argument("--out", required=True)
     s.add_argument("--exclude", nargs="*", default=[], help="ride names to leave out (to judge them fairly)")
-    s.add_argument("--baseline", action="store_true", help="linear regression and constants instead of TabPFN")
+    s.add_argument("--baseline", choices=("linear", "fixed"),
+                   help="instead of TabPFN: linear regressions on the same columns, or a fixed ceiling and cadence")
     s.add_argument("--n-estimators", type=int, default=4)
 
     s = sub.add_parser("profile", help="rebuild a route's profile from the terrain (GPX in, .npz out)")
@@ -213,11 +214,14 @@ def cmd_validate(args) -> int:
 
 
 def cmd_learn(args) -> int:
-    from .models import ConstantModel, LinearModel, TabPFNModel, learned_limits
+    from .models import ColumnsModel, ConstantModel, LinearModel, TabPFNModel, learned_limits
 
     rides, tabs = _load_tables(args.prepared, args.exclude)
-    if args.baseline:
-        models = {"hr": LinearModel(tabs["hr"]["X"], tabs["hr"]["y"]),
+    if args.baseline == "linear":
+        models = {k: LinearModel(tabs[k]["X"], tabs[k]["y"]) for k in ("hr", "cadence", "speed")}
+    elif args.baseline == "fixed":
+        # One ceiling for every temperature and hour (heart rate from power alone), one cadence.
+        models = {"hr": ColumnsModel(LinearModel, [0], tabs["hr"]["X"], tabs["hr"]["y"]),
                   "cadence": ConstantModel(tabs["cadence"]["X"], tabs["cadence"]["y"]),
                   "speed": LinearModel(tabs["speed"]["X"], tabs["speed"]["y"])}
     else:
@@ -227,7 +231,7 @@ def cmd_learn(args) -> int:
              "temp_range_c": [float(np.percentile(temp, 2)), float(np.percentile(temp, 98))],
              "cool_c": float(np.percentile(temp, 10)), "learned": datetime.now(timezone.utc).isoformat(timespec="minutes")}
     lim = learned_limits(models, args.z2_top, notes)
-    lim.source = "baseline" if args.baseline else "tabpfn"
+    lim.source = args.baseline or "tabpfn"
     lim.save(args.out)
     log(f"limits written to {args.out} ({lim.source}, {len(rides)} rides)")
     return 0

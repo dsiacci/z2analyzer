@@ -77,6 +77,18 @@ class ConstantModel:
         return np.tile(np.quantile(self.q, qs), (len(X), 1))
 
 
+class ColumnsModel:
+    """A model that only looks at some of the columns (to build blunter baselines)."""
+
+    def __init__(self, base, cols, X, y):
+        self.cols = list(cols)
+        self.m = base(np.asarray(X)[:, self.cols], y)
+        self.name = f"{base.name} on {len(self.cols)} column(s)"
+
+    def quantiles(self, X, qs=QUANTILES) -> np.ndarray:
+        return self.m.quantiles(np.asarray(X)[:, self.cols], qs)
+
+
 def _subsample(X, y, max_rows: int, seed: int):
     if len(y) <= max_rows:
         return X, y
@@ -171,6 +183,18 @@ def speed_table(spd_model, grades=GRADES, powers=POWERS) -> Table2D:
     return Table2D(np.asarray(grades, float), np.asarray(powers, float), q[..., 0], q[..., 1], q[..., 2])
 
 
+# Coarser grids for learned tables: TabPFN predicts every grid point, and the
+# verdicts interpolate between them.
+LEARN_TEMPS = np.arange(8.0, 39.0, 2.0)
+LEARN_ELAPSED = np.array([0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 300.0, 360.0])
+LEARN_POWERS = np.arange(40.0, 301.0, 5.0)
+LEARN_GRADES = np.round(np.arange(-0.15, 0.2501, 0.01), 4)
+LEARN_CLIMB = np.array([0.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0])
+LEARN_SPEED_POWERS = np.arange(0.0, 401.0, 20.0)
+
+
 def learned_limits(models: dict, z2_top_bpm: float, notes: dict | None = None) -> Limits:
-    return Limits(ceiling=ceiling_table(models["hr"], z2_top_bpm), cadence=cadence_table(models["cadence"]),
-                  speed=speed_table(models["speed"]), source=getattr(models["hr"], "name", "learned"), notes=notes)
+    return Limits(ceiling=ceiling_table(models["hr"], z2_top_bpm, LEARN_TEMPS, LEARN_ELAPSED, LEARN_POWERS),
+                  cadence=cadence_table(models["cadence"], LEARN_GRADES, LEARN_CLIMB),
+                  speed=speed_table(models["speed"], LEARN_GRADES, LEARN_SPEED_POWERS),
+                  source=getattr(models["hr"], "name", "learned"), notes=notes)
