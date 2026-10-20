@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+# Rides, routes and anything derived from them stay on the rider's machine.
+*.fit
+*.FIT
+*.gpx
+*.GPX
+*.tcx
+private/
+out/
+.cache/
+# Terrain tiles are downloaded locally (IGN RGE ALTI, Copernicus DEM).
+dem/
+*.asc
+*.7z
+*.tif
+!tests/data/*.gpx

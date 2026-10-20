@@ -1,0 +1,20 @@
+z2analyzer
+Copyright 2026 Dominique Siacci
+
+Built with PriorLabs-TabPFN.
+
+This software uses the TabPFN v2 regressor weights by Prior Labs GmbH, under
+the Prior Labs License 1.1 (Apache License 2.0 with an additional attribution
+provision). A copy of that license is in licenses/PriorLabs-License-1.1.txt.
+The weights are downloaded at run time from
+https://huggingface.co/Prior-Labs/TabPFN-v2-reg and are not included here.
+The tabpfn Python package is licensed under the Apache License 2.0.
+
+FIT files are read with fitdecode (MIT License).
+
+Data read at run time, never shipped in this repository:
+- Terrain: IGN, RGE ALTI® 5 m, Licence Ouverte 2.0 (Etalab). Source: IGN.
+- Bridges and tunnels: © OpenStreetMap contributors, Open Database License
+  (ODbL) 1.0, https://www.openstreetmap.org/copyright
+- Weather: Open-Meteo (https://open-meteo.com), CC BY 4.0, with the
+  Météo-France models.

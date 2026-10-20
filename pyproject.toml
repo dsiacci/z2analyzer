@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "z2analyzer"
+version = "0.1.0"
+description = "How much of a ride can really stay in Zone 2? Physics for the slope, TabPFN for the rider, all on your own machine."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "licenses/*"]
+dependencies = [
+  "numpy>=1.24",
+  "fitdecode==0.10.0",
+]
+
+[project.optional-dependencies]
+# The learned models (heart rate, lowest cadence, Zone 2 speed) run TabPFN v2 on the CPU.
+model = ["tabpfn>=9.1,<10"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+z2analyzer = "z2analyzer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+z2analyzer = ["py.typed", "static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
