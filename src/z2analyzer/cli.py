@@ -85,6 +85,7 @@ def main(argv=None) -> int:
     s.add_argument("--watts", action="store_true", help="also print watts")
     s.add_argument("--json", help="write the full verdict as JSON")
     s.add_argument("--html", help="write the local page")
+    s.add_argument("--name", help="the route's name on the page (default: from the file)")
 
     s = sub.add_parser("review", help="after a ride: who made the minutes above Zone 2 (road, heat, you)")
     s.add_argument("ride", help="FIT file, or a ride from `z2analyzer prepare`")
@@ -298,6 +299,7 @@ def cmd_plan(args) -> int:
     rider = rider_from_env(args.mass_kg)
     lim = Limits.load(args.limits)
     prof, name = _profile_of(args.route, args.terrain, args.structures)
+    name = args.name or name
     if args.when:
         from .weather import get_hourly
 

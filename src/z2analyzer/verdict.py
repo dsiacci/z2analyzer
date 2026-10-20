@@ -153,7 +153,7 @@ def plan(profile: Profile, rider: Rider, limits: Limits, temp: TempFn, start_ela
         t += st.time_s
         if in_climb:
             climbing_s += st.time_s
-    return Plan(stretches=out, shares=_shares(out, "mid"), passages=passages(out),
+    return Plan(stretches=out, shares=_shares(out, "mid"), passages=passages(out, gap_m=150.0),
                 shares_low=_shares(out, "low"), shares_high=_shares(out, "high"))
 
 
@@ -331,13 +331,18 @@ def review(*, dist_m, speed_ms, hr, cadence_rpm, moving, temp_air_c, profile: Pr
     gear = gear_check(gidx, above, possible_now, moving)
     return Review(moving_min=float(np.sum(moving)) / 60.0, above_min=to_min(above),
                   road_min=to_min(road), heat_min=to_min(heat), me_min=to_min(me),
-                  road_range=(to_min(r_hi), to_min(r_lo)), heat_range=(to_min(h_hi), to_min(h_lo)),
-                  me_range=(to_min(m_lo), to_min(m_hi)), shares=shares,
+                  road_range=_span(to_min(r_hi), to_min(r_lo)), heat_range=_span(to_min(h_hi), to_min(h_lo)),
+                  me_range=_span(to_min(m_lo), to_min(m_hi)), shares=shares,
                   passages=_ride_passages(d, possible_now, moving, grade, p_min, ceil["mid"]),
                   gear=gear, day_offset_bpm=offset,
                   per_second={"grade": grade, "p_min_ratio": p_lag / np.maximum(ceil["mid"], 1.0),
                               "above": above, "road": road, "heat": heat, "me": me, "gear": gidx,
                               "possible": possible_now})
+
+
+def _span(a: float, b: float) -> tuple[float, float]:
+    """(fewest, most): a lower ceiling can move minutes from the heat to the road, so either end can be larger."""
+    return (min(a, b), max(a, b))
 
 
 def gear_check(gidx, above, possible, moving) -> dict:
