@@ -107,8 +107,14 @@ was possible that day.
 for 900 m in the smallest gear); on the 58 km loop ridden on 13, 20 and
 27 September, Zone 2 was possible on 98 to 100 % of the kilometres.
 
-With one fixed ceiling and one fixed cadence instead (no heat, no hours ridden,
-no day level): the road 64 min, the heat 0, me 572.
+The split hardly depends on which model won (same rides, same rule, limits that
+never saw the ride they judge):
+
+| Limits | The road | The heat | Me |
+|---|---|---|---|
+| Chosen (line for the heart rate and the cadence) | 98 | 17 | 522 |
+| TabPFN for every table | 88 | 33 | 516 |
+| One fixed ceiling and cadence (no heat, no hours ridden, no day level) | 64 | 0 | 572 |
 
 Read with care:
 
