@@ -184,10 +184,11 @@ PAGE = """<!doctype html>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
 <title>{title}</title>
 <style>
-:root {{ --bg:#f4f1ea; --card:#fffdf9; --ink:#1b2230; --muted:#5f6779; --line:rgba(27,34,48,.12);
-  --green:{green}; --red:{red}; --amber:{amber}; --grey:{grey}; --ridge:#1b2230; }}
-@media (prefers-color-scheme: dark) {{ :root {{ --bg:#11151d; --card:#1a202b; --ink:#eef1f6; --muted:#9aa3b5;
-  --line:rgba(238,241,246,.12); --ridge:#eef1f6; }} }}
+/* A survey map's paper: cool grey-green ground, white cards, navy ink; green and coral only carry verdicts. */
+:root {{ --bg:#e9eeec; --card:#ffffff; --ink:#15202a; --muted:#566370; --line:rgba(21,32,42,.12);
+  --green:{green}; --red:{red}; --amber:{amber}; --grey:{grey}; --ridge:#15202a; color-scheme:light; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --bg:#0e1418; --card:#162027; --ink:#e8eef1; --muted:#97a6b2;
+  --line:rgba(232,238,241,.13); --ridge:#e8eef1; color-scheme:dark; }} }}
 * {{ box-sizing:border-box; }}
 body {{ margin:0; background:var(--bg); color:var(--ink); font:17px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }}
 main {{ max-width:1080px; margin:0 auto; padding:28px 16px 56px; }}
@@ -203,7 +204,7 @@ h2 {{ font-size:14px; text-transform:uppercase; letter-spacing:.1em; color:var(-
 .row .card {{ margin:0; }}
 svg {{ width:100%; height:auto; display:block; }}
 .tick {{ font-size:12px; fill:var(--muted); font-variant-numeric:tabular-nums; }}
-.tag {{ font-size:12px; font-weight:700; fill:var(--red); }}
+.tag {{ font-size:12px; font-weight:700; fill:var(--red); paint-order:stroke; stroke:var(--card); stroke-width:4px; stroke-linejoin:round; }}
 .pin {{ stroke:var(--red); stroke-width:1.2; }}
 .grid {{ stroke:var(--line); stroke-width:1; }}
 .ridge {{ stroke:var(--ridge); stroke-width:1.4; }}
