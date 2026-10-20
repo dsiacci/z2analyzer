@@ -20,11 +20,11 @@ which, before and after the ride, so you don't have to read the curves.
   `morning.md`.
 
 ```text
-$ z2analyzer review ride.fit --limits limits.json --z2-top 145
+$ z2analyzer review ride.fit --limits limits.json --terrain dem/ --z2-top 145
 119 min above Zone 2: 45 imposed by the road, 5 by the heat, 70 mine.
 Zone 2 was possible on 88 % of the kilometres, 72 % of the time.
 
-$ z2analyzer plan loop.gpx --limits limits.json --when "2026-10-24 08:30"
+$ z2analyzer plan loop.gpx --limits limits.json --terrain dem/ --when "2026-10-24 08:30"
 Zone 2 is possible on 89 % of the kilometres, but 70 % of the time.
 11 passages where it is not: 6.8 km, 1 h 02 even at your slowest pace.
 ```
