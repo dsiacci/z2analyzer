@@ -124,9 +124,10 @@ work out the rider's mass.
   never for a track, sent to the OpenStreetMap Overpass API, once.
 - **TabPFN**: the weights are downloaded once from Hugging Face; it runs on the
   CPU, with no account, no API and no cost per analysis.
-- The local page (`--html`) loads nothing from anywhere: no fonts, no scripts,
-  no map tiles (a tile server would learn which area you looked at). It draws
-  the route's shape without its first and last 2 km.
+- The local page (`--html`) loads nothing from anywhere: its fonts travel
+  inside it, there are no scripts and no map tiles (a tile server would learn
+  which area you looked at). It draws the route's shape without its first and
+  last 2 km.
 
 ## Data
 
@@ -137,6 +138,7 @@ work out the rider's mass.
 | Air temperature | [Open-Meteo](https://open-meteo.com), Météo-France models (forecast, and the archive of past forecasts for past rides) | CC BY 4.0 |
 | Model | TabPFN v2 regressor, [Prior-Labs/TabPFN-v2-reg](https://huggingface.co/Prior-Labs/TabPFN-v2-reg) | Prior Labs License 1.1 |
 | FIT files | read with [fitdecode](https://github.com/polyvertex/fitdecode) 0.10.0 | MIT |
+| Fonts of the local pages | Saira Extra Condensed and Saira Semi Condensed, embedded in each page | SIL Open Font License 1.1 |
 
 Outside France, any ESRI ASCII grid in Lambert-93 works today; other terrain
 models (Copernicus DEM) need a small reader.

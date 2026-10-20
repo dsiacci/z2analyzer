@@ -12,6 +12,10 @@ The tabpfn Python package is licensed under the Apache License 2.0.
 
 FIT files are read with fitdecode (MIT License).
 
+The local pages embed the Saira typefaces (Saira Extra Condensed, Saira Semi
+Condensed; Copyright 2016 The Saira Project Authors), under the SIL Open Font
+License 1.1. A copy of that license is in licenses/OFL-Saira.txt.
+
 Data read at run time, never shipped in this repository:
 - Terrain: IGN, RGE ALTI® 5 m, Licence Ouverte 2.0 (Etalab). Source: IGN.
 - Bridges and tunnels: © OpenStreetMap contributors, Open Database License
