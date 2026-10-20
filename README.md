@@ -15,6 +15,9 @@ which, before and after the ride, so you don't have to read the curves.
   you spent above Zone 2 between **the road** (impossible there, even in the
   cool), **the heat** (possible in the cool, not that day) and **you** (it was
   possible).
+- **Overnight**: point `z2analyzer watch` at the folder where your FIT files
+  land. Every new ride gets its verdict, and the two lines wait for you in
+  `morning.md`.
 
 ```text
 $ z2analyzer review ride.fit --limits limits.json --z2-top 145
@@ -95,6 +98,9 @@ z2analyzer plan route.gpx --limits limits.json --terrain dem/ --structures bridg
 
 # After a ride
 z2analyzer review ride.fit --limits limits.json --terrain dem/ --structures bridges.json --z2-top 145 --html ride.html
+
+# Or let it do that by itself: every new FIT in the folder, judged once (run it from cron, or add --every 30)
+z2analyzer watch ~/rides --limits limits.json --terrain dem/ --structures bridges.json --z2-top 145
 ```
 
 No power meter, or no rides yet? `z2analyzer fixed --ceiling-cool 150

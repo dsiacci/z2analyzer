@@ -2,10 +2,11 @@
 
     z2analyzer structures --bbox 41.3 8.5 43.1 9.6 --out bridges.json
     z2analyzer prepare rides/*.fit --terrain dem/ --structures bridges.json --out prepared/
-    z2analyzer validate prepared/ --z2-top 145
-    z2analyzer learn prepared/ --z2-top 145 --out limits.json
+    z2analyzer validate prepared/ --out validate.json
+    z2analyzer learn prepared/ --z2-top 145 --models hr=linear cadence=linear speed=tabpfn --validation validate.json --out limits.json
     z2analyzer plan route.gpx --limits limits.json --terrain dem/ --when "2026-10-24 08:30"
     z2analyzer review ride.fit --limits limits.json --terrain dem/ --z2-top 145
+    z2analyzer watch ~/rides --limits limits.json --terrain dem/ --z2-top 145   # every new FIT, for the morning
 
 The rider's mass is read from the Z2_MASS_KG environment variable (or
 --mass-kg) and never written anywhere. Outputs give shares, minutes, grades
@@ -99,6 +100,16 @@ def main(argv=None) -> int:
     s.add_argument("--json")
     s.add_argument("--html")
 
+    s = sub.add_parser("watch", help="judge every new FIT in a folder and leave the verdicts for the morning")
+    s.add_argument("folder", help="where your FIT files land (the verdicts go in its z2analyzer/ subfolder)")
+    s.add_argument("--limits", required=True)
+    s.add_argument("--z2-top", type=float, required=True, help="top of your Zone 2, bpm")
+    s.add_argument("--terrain", required=True)
+    s.add_argument("--structures")
+    s.add_argument("--every", type=float, default=0.0, help="minutes between two looks (0: look once and stop, for cron)")
+    s.add_argument("--edge-temp", action="store_true", help="use the computer's sensor instead of Open-Meteo")
+    s.add_argument("--mass-kg", type=float)
+
     s = sub.add_parser("fixed", help="limits from a few numbers, without any ride")
     s.add_argument("--ceiling-cool", type=float, required=True, help="Zone 2 ceiling in the cool, W")
     s.add_argument("--ceiling-hot", type=float, required=True, help="Zone 2 ceiling at 30 °C, W")
@@ -114,6 +125,10 @@ def main(argv=None) -> int:
         return cmd_plan(args)
     if args.cmd == "review":
         return cmd_review(args)
+    if args.cmd == "watch":
+        from .watch import watch
+
+        return watch(args)
     if args.cmd == "fixed":
         from .limits import fixed_limits
 
@@ -361,19 +376,13 @@ def cmd_review(args) -> int:
     else:
         if not args.terrain:
             raise SystemExit("a FIT file needs --terrain (folder of terrain tiles)")
-        from .dataset import ride_data
         from .dem import Terrain
-        from .fitfile import read_fit
         from .structures import Structures
-        from .weather import get_hourly
 
-        ride = read_fit(args.ride)
-        if ride.is_virtual:
-            raise SystemExit("an indoor ride has no real slope")
-        ok = np.isfinite(ride.lat) & np.isfinite(ride.lon)
-        hourly = get_hourly(float(np.mean(ride.lat[ok])), float(np.mean(ride.lon[ok])), ride.start.date(),
-                            (ride.start + timedelta(seconds=float(ride.t[-1]))).date(), archive=True)
-        rd = ride_data(ride, Terrain(args.terrain), Structures(args.structures) if args.structures else None, hourly.at)
+        try:
+            rd = ride_from_fit(args.ride, Terrain(args.terrain), Structures(args.structures) if args.structures else None)
+        except ValueError as e:
+            raise SystemExit(str(e))
     cool = args.cool_temp if args.cool_temp is not None else float((lim.notes or {}).get("cool_c", 15.0))
     r = review(dist_m=rd.dist, speed_ms=rd.speed, hr=rd.hr, cadence_rpm=rd.cadence, moving=rd.moving,
                temp_air_c=rd.temp_air, profile=rd.profile, rider=rider, limits=lim, z2_top_bpm=args.z2_top,
@@ -385,6 +394,34 @@ def cmd_review(args) -> int:
         write_review_html(args.html, r, rd, args.z2_top, cool)
         log(f"page written to {args.html}")
     return 0
+
+
+def ride_from_fit(path, terrain, structures=None, edge_temp: bool = False):
+    """One-second series of a ride, with the air temperature from the Météo-France archive.
+
+    Refuses indoor rides and rides without power. Without a network (or with
+    `edge_temp`), the computer's own sensor stands in for the air.
+    """
+    from .dataset import ride_data
+    from .fitfile import read_fit
+
+    ride = read_fit(path)
+    if ride.is_virtual:
+        raise ValueError(f"{ride.name}: an indoor ride has no real slope")
+    if not ride.has_power:
+        raise ValueError(f"{ride.name}: no power in this file")
+    temp_fn = None
+    if not edge_temp:
+        from .weather import get_hourly
+
+        ok = np.isfinite(ride.lat) & np.isfinite(ride.lon)
+        try:
+            hourly = get_hourly(float(np.mean(ride.lat[ok])), float(np.mean(ride.lon[ok])), ride.start.date(),
+                                (ride.start + timedelta(seconds=float(ride.t[-1]))).date(), archive=True)
+            temp_fn = hourly.at
+        except OSError as e:  # no network: the computer's sensor will do
+            log(f"{ride.name}: no weather archive ({e}); using the computer's temperature sensor")
+    return ride_data(ride, terrain, structures, temp_fn)
 
 
 def _review_json(r, rd, z2_top, cool) -> dict:

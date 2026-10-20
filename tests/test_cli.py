@@ -55,18 +55,8 @@ def test_plan_and_review_end_to_end(tmp_path, capsys):
     assert "<svg" in text and "http://" not in text.replace("http://www.w3.org", "") and "Built with PriorLabs-TabPFN" in text
 
     # A ride up the same road at 52 rpm in 34x34 on the ramp, heart above 145 bpm there.
-    d = cumulative_m(lat, np.full(lat.size, LON0))
-    t, x, samples = 0, 0.0, []
-    while x < d[-1] - 5:
-        on_ramp = 2000 <= x <= 3500
-        v = 52 / 60 * 2.105 if on_ramp else 7.0
-        la = float(np.interp(x, d, lat))
-        samples.append({"t": t, "lat": la, "lon": LON0, "hr": 155 if (on_ramp and x > 2300) else 130, "cadence": 52 if on_ramp else 80,
-                        "dist": x, "power": 180 if on_ramp else 120, "temp": 15, "speed": v, "alt": 100.0})
-        x += v
-        t += 1
     fit = tmp_path / "ride.fit"
-    write_fit(fit, datetime(2026, 9, 27, 6, 0, tzinfo=timezone.utc), samples)
+    write_fit(fit, datetime(2026, 9, 27, 6, 0, tzinfo=timezone.utc), ramp_ride(lat))
     rd = tmp_path / "prepared"
     # Prepare with the computer's sensor (no network in the tests), then review from the prepared ride.
     assert cli.main(["prepare", str(fit), "--terrain", str(dem), "--out", str(rd), "--edge-temp"]) == 0
@@ -77,3 +67,41 @@ def test_plan_and_review_end_to_end(tmp_path, capsys):
     assert r["above_min"] > 0 and r["road_min"] > 0.8 * r["above_min"]
     assert r["gear"]["impossible_smallest_gear_share"] > 0.9
     assert "imposed by the road" in capsys.readouterr().out
+
+
+def ramp_ride(lat):
+    """Samples of a made-up ride up the test ramp (heart above 145 bpm on it)."""
+    d = cumulative_m(lat, np.full(lat.size, LON0))
+    t, x, samples = 0, 0.0, []
+    while x < d[-1] - 5:
+        on_ramp = 2000 <= x <= 3500
+        v = 52 / 60 * 2.105 if on_ramp else 7.0
+        samples.append({"t": t, "lat": float(np.interp(x, d, lat)), "lon": LON0, "hr": 155 if (on_ramp and x > 2300) else 130,
+                        "cadence": 52 if on_ramp else 80, "dist": x, "power": 180 if on_ramp else 120, "temp": 15, "speed": v,
+                        "alt": 100.0})
+        x += v
+        t += 1
+    return samples
+
+
+def test_watch_judges_each_new_ride_once(tmp_path, capsys):
+    dem = terrain(tmp_path)
+    _, lat = gpx(tmp_path)
+    lim = tmp_path / "limits.json"
+    cli.main(["fixed", "--ceiling-cool", "150", "--ceiling-hot", "120", "--cadence", "50", "--mass-kg", "75", "--out", str(lim)])
+    rides = tmp_path / "rides"
+    rides.mkdir()
+    write_fit(rides / "monday.fit", datetime(2026, 9, 27, 6, 0, tzinfo=timezone.utc), ramp_ride(lat))
+    write_fit(rides / "indoor.fit", datetime(2026, 9, 28, 6, 0, tzinfo=timezone.utc), ramp_ride(lat)[:200], manufacturer=260)
+    args = ["watch", str(rides), "--limits", str(lim), "--z2-top", "145", "--terrain", str(dem), "--edge-temp", "--mass-kg", "75"]
+    assert cli.main(args) == 0
+    morning = (rides / "z2analyzer" / "morning.md").read_text()
+    assert morning.count("## ") == 1 and "imposed by the road" in morning and "monday.html" in morning
+    assert (rides / "z2analyzer" / "monday.html").exists() and not (rides / "z2analyzer" / "indoor.html").exists()
+    # A second look finds nothing new; a new ride lands on top.
+    assert cli.main(args) == 0
+    assert (rides / "z2analyzer" / "morning.md").read_text().count("## ") == 1
+    write_fit(rides / "tuesday.fit", datetime(2026, 9, 29, 6, 0, tzinfo=timezone.utc), ramp_ride(lat))
+    assert cli.main(args) == 0
+    morning = (rides / "z2analyzer" / "morning.md").read_text()
+    assert morning.count("## ") == 2 and morning.index("tuesday.fit") < morning.index("monday.fit")
