@@ -194,7 +194,9 @@ def main() -> int:
     if amix:
         labels = "".join(f"[a{k}]" for k, sc in enumerate(plan_) if sc["clip"])
         afilter = ";".join(amix) + f";{labels}amix=inputs={len(amix)}:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11,apad[aout]"
-        cmd += ["-filter_complex", f"{vfilter};{afilter}", "-map", vlabel, "-map", "[aout]", "-c:a", "aac", "-b:a", "160k"]
+        # loudnorm works at 192 kHz: bring the voice back to 48 kHz for the players.
+        cmd += ["-filter_complex", f"{vfilter};{afilter}", "-map", vlabel, "-map", "[aout]", "-c:a", "aac", "-b:a", "160k",
+                "-ar", "48000"]
     else:
         cmd += ["-filter_complex", vfilter, "-map", vlabel]
     target = out / "z2analyzer-demo.mp4"
