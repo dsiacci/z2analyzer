@@ -309,7 +309,11 @@ def cmd_plan(args) -> int:
         origin = start.replace(minute=0, second=0, microsecond=0)
         temp = forecast_temp(hourly.hours_since(origin), hourly.temp_c, hourly.elevation_m,
                              (start - origin).total_seconds() / 3600.0)
-        cond = f"{args.when} ({args.tz}), Météo-France forecast through Open-Meteo"
+        t0 = float(temp(np.array([0.0]), np.array([prof.elev[0]]))[0])
+        cond = f"Start {args.when} ({args.tz}), {t0:.0f} °C forecast at the start (Météo-France, through Open-Meteo)"
+        low = ((lim.notes or {}).get("domain") or {}).get("temp", [None])[0]
+        if low is not None and t0 < low:
+            cond += f"; your rides start at {low:.0f} °C, so colder hours count as {low:.0f} °C"
     else:
         t = args.temp if args.temp is not None else (30.0 if args.hot else float((lim.notes or {}).get("cool_c", 15.0)))
         temp = constant_temp(t)

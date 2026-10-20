@@ -45,7 +45,7 @@ def plan_text(p, name: str, cond: str, prof, watts: bool = False) -> str:
     up = float(np.sum(np.clip(np.diff(prof.elev), 0, None)))
     lines = [
         f"Zone 2 is possible on {pct(sh.km_share)} of the kilometres, but {pct(sh.time_share)} of the time.",
-        f"{len(p.passages)} passages where it is not: {sum(x.length_m for x in p.passages) / 1000:.1f} km, "
+        f"{len(p.passages)} passage{'s' if len(p.passages) != 1 else ''} where it is not: {sum(x.length_m for x in p.passages) / 1000:.1f} km, "
         f"{hm(sum(x.time_s for x in p.passages))} even at your slowest pace.",
         "",
         f"{name}: {sh.km_total:.1f} km, {up:.0f} m of climbing (terrain model), about {hm(sh.time_total_s)} riding easy.",
