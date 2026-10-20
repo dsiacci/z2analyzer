@@ -204,12 +204,14 @@ def heart_table(hr_model, temps=LEARN_TEMPS, elapsed=LEARN_ELAPSED, powers=LEARN
 
 
 def domain(tabs: dict) -> dict:
-    """Where the rides say something: 1st to 99th percentile of each input the verdicts use."""
+    """Where the rides say something: 1st to 99th percentile of each input the verdicts use, and of the lowest cadence."""
     p = lambda a, q: float(np.percentile(a, q))  # noqa: E731
     hx, cx, sx = tabs["hr"]["X"], tabs["cadence"]["X"], tabs["speed"]["X"]
+    cy = tabs["cadence"]["y"]
     return {"temp": [p(hx[:, 2], 1), p(hx[:, 2], 99)], "elapsed": [0.0, p(hx[:, 3], 99)],
             "climb_grade": [p(cx[:, 0], 1), p(cx[:, 0], 99)], "climb_min": [0.0, p(cx[:, 1], 99)],
-            "speed_grade": [p(sx[:, 0], 1), p(sx[:, 0], 99)], "speed_power": [0.0, p(sx[:, 1], 99)]}
+            "speed_grade": [p(sx[:, 0], 1), p(sx[:, 0], 99)], "speed_power": [0.0, p(sx[:, 1], 99)],
+            "cadence_rpm": [p(cy, 1), p(cy, 99)]}
 
 
 def _grid(lo: float, hi: float, step: float) -> np.ndarray:
@@ -222,7 +224,10 @@ def learned_limits(models: dict, z2_top_bpm: float, notes: dict | None = None, d
 
     Outside that domain (a colder day, a steeper grade, a longer ride than any
     ride learned from) the tables hold their edge value instead of
-    extrapolating: a line keeps falling forever, the rides do not.
+    extrapolating: a line keeps falling forever, the rides do not. Inside it,
+    the lowest cadence never goes below the slowest the rides show: a steep
+    ramp after a long climb, which they may not have, would otherwise take a
+    line below anything ridden.
     """
     if dom is None:
         heart = heart_table(models["hr"])
@@ -232,6 +237,9 @@ def learned_limits(models: dict, z2_top_bpm: float, notes: dict | None = None, d
         heart = heart_table(models["hr"], _grid(*dom["temp"], 2.0), _grid(*dom["elapsed"], 30.0), LEARN_POWERS)
         cad = cadence_table(models["cadence"], np.round(_grid(max(0.0, dom["climb_grade"][0]), dom["climb_grade"][1], 0.01), 4),
                             _grid(*dom["climb_min"], 5.0))
+        if "cadence_rpm" in dom:
+            floor = dom["cadence_rpm"][0]
+            cad = Table2D(cad.x, cad.y, np.maximum(cad.low, floor), np.maximum(cad.mid, floor), np.maximum(cad.high, floor))
         spd = speed_table(models["speed"], np.round(_grid(*dom["speed_grade"], 0.01), 4), _grid(*dom["speed_power"], 20.0))
     T, E = np.meshgrid(heart.temps, heart.elapsed, indexing="ij")
     c = {w: heart.ceiling(T.ravel(), E.ravel(), z2_top_bpm, w).reshape(T.shape) for w in ("low", "mid", "high")}

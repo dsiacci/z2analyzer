@@ -153,8 +153,8 @@ nine others: **637 minutes above Zone 2, of which the road made 98, the heat
 17 and the rider 522.** Where Zone 2 was possible and the heart was above it,
 an easier gear was still there 91 % of the time.
 
-TabPFN won one of its three jobs: it predicts the speed with half the error of
-a linear regression (0.70 against 1.20 m/s) on rides it never saw. A linear
+TabPFN won one of its three jobs: it predicts the speed with 40 % less error
+than a linear regression (0.70 against 1.20 m/s) on rides it never saw. A linear
 regression won the heart rate (6.5 against 8.1 bpm) and, barely, the lowest
 cadence; the reason, and what it changed in the tool, is in
 [docs/results.md](docs/results.md), with every table and what failed.
@@ -172,8 +172,9 @@ cadence; the reason, and what it changed in the tool, is in
   range shows it.
 - The models only know the conditions of your rides. Outside them (a colder
   morning, a steeper grade, a longer ride) the tables hold their edge value
-  instead of extrapolating, and `plan` says when the forecast is colder than
-  any ride it learned from.
+  instead of extrapolating, the lowest cadence never drops below the slowest
+  your rides show, and `plan` says when the forecast is colder than any ride
+  it learned from.
 - The heat share only counts what the model learned about temperature across
   your rides; the rest of a hot day's extra heart rate lands in that day's
   level.

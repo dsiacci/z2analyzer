@@ -10,8 +10,9 @@ purpose (with a speed and a grade, watts give away the rider's mass).
 ## 1. The data
 
 - **Terrain against the barometer.** The total climbing of the rebuilt profile
-  (IGN RGE ALTI 5 m, bridges and tunnels drawn straight) is within 2 to 9 % of
-  the bike computer's barometric altitude on every ride.
+  (IGN RGE ALTI 5 m, bridges and tunnels drawn straight) is within 4 % of the
+  bike computer's barometric climbing on nine rides, and 8 % on the tenth
+  (24 August: 208 m against 227).
 - **Air against the computer's sensor.** The Météo-France temperature (one
   point rounded to 0.1°, moved to the road's elevation) and the computer's own
   sensor agree within a degree at dawn; on the hottest ride the sensor read
@@ -78,7 +79,12 @@ One more failure, fixed: the line for the lowest cadence kept falling with the
 grade, to 40 rpm on the steepest slopes, while the steepest climbs show nothing
 much below 49. Every learned table now stops at the 1st and 99th percentiles of
 what the rides cover (grades of 3 to 15 %, air from 18.5 to 32.8 °C, up to
-5 h 25 ridden) and holds its edge value beyond.
+5 h 25 ridden) and holds its edge value beyond. Inside that box the line
+still fell where a steep grade meets a long climb, which these rides never had
+(no window above 12 % comes after more than 7 minutes of climbing): 37 rpm at
+15 % after 40 minutes. So the lowest cadence now never goes below the slowest
+the rides show, their 1st percentile (42 rpm here); applied to the limits of
+section 3, that changes none of their minutes.
 
 ## 3. Every ride judged by limits that never saw it
 

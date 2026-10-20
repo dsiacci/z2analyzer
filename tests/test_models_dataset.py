@@ -127,3 +127,28 @@ def test_heart_table_inverts_to_the_same_ceiling_and_follows_the_day_level():
     hr = 90 + 0.4 * p + 0.5 * (20.0 - 15) + 0.03 * (np.arange(n) / 60.0) + 6.0
     off = lim.day_offset(hr, p, p, np.full(n, 20.0), np.arange(n) / 60.0, np.ones(n, bool))
     assert off == pytest.approx(6.0, abs=0.7)
+
+
+def test_lowest_cadence_never_below_what_the_rides_show():
+    from z2analyzer.models import domain, learned_limits
+
+    rng = np.random.default_rng(1)
+    # Steep climbs are short and long climbs are gentle; the cadence falls with both.
+    cx = np.vstack([np.column_stack([rng.uniform(0.08, 0.15, 200), rng.uniform(0, 8, 200)]),
+                    np.column_stack([rng.uniform(0.03, 0.07, 200), rng.uniform(10, 60, 200)])])
+    cy = 70 - 120 * cx[:, 0] - 0.2 * cx[:, 1] + rng.normal(0, 1, len(cx))
+    hx = np.column_stack([rng.uniform(80, 200, 300), rng.uniform(80, 200, 300), rng.uniform(15, 30, 300),
+                          rng.uniform(0, 240, 300)])
+    sx = np.column_stack([rng.uniform(-0.05, 0.1, 300), rng.uniform(50, 250, 300)])
+    tabs = {"hr": {"X": hx, "y": np.full(300, 130.0)}, "cadence": {"X": cx, "y": cy},
+            "speed": {"X": sx, "y": np.full(300, 8.0)}}
+    line = LinearModel(cx, cy)
+    lim = learned_limits({"hr": FakeHeart(), "cadence": line, "speed": LinearModel(sx, tabs["speed"]["y"])}, 145.0,
+                         dom=domain(tabs))
+    floor = np.percentile(cy, 1)
+    # A 15 % ramp after an hour of climbing: the line alone goes far below any cadence ridden.
+    assert line.quantiles(np.array([[0.15, 60.0]]), (0.05,))[0, 0] < floor - 5
+    assert lim.cadence(0.15, 60.0, "low") == pytest.approx(floor)
+    assert lim.cadence.low.min() == pytest.approx(floor)
+    # Where the rides are, the line is left as it is.
+    assert lim.cadence(0.05, 30.0) == pytest.approx(line.quantiles(np.array([[0.05, 30.0]]), (0.1,))[0, 0], abs=0.05)
