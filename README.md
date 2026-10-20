@@ -116,11 +116,11 @@ work out the rider's mass.
 
 ## What leaves your machine
 
-- **Nothing from your rides.** FIT and GPX files are read locally; prepared
+- **No ride file and no track.** FIT and GPX files are read locally; prepared
   rides keep no positions; terrain tiles are read from disk.
 - **Weather**: one point rounded to 0.1° (about 11 km) and a date, sent to
-  Open-Meteo. `--edge-temp` uses your computer's own sensor instead (warmed by
-  the sun: up to 4 °C high on a hot ride).
+  Open-Meteo. `--edge-temp` uses your bike computer's sensor instead (warmed
+  by the sun: up to 4 °C high on a hot ride).
 - **Bridges and tunnels**: one request for a box you choose (a whole region),
   never for a track, sent to the OpenStreetMap Overpass API, once.
 - **TabPFN**: the weights are downloaded once from Hugging Face; it runs on the

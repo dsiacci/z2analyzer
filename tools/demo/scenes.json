@@ -47,7 +47,7 @@
    "id": "outro",
    "shot": "card:outro",
    "min": 5.0,
-   "say": "Open source. Nothing leaves your machine."
+   "say": "Open source, open weights, on your own machine."
   }
  ],
  "cards": {
