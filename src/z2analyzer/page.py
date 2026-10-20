@@ -2,8 +2,10 @@
 
 One HTML file each, and nothing loaded from anywhere: the fonts (Saira, SIL
 Open Font License) travel inside the page, the charts are inline SVG, and
-their labels are HTML so they stay readable on a phone. The route's shape
-leaves out its first and last 2 km.
+their labels are HTML so they stay readable on a phone. Every figure drawn
+along the route (the skyline, the roadbook, the climbs, the shape) leaves out
+its first and last 2 km, so a screenshot doesn't show where a ride starts or
+ends; the numbers still count the whole route.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import numpy as np
 from .geo import trim_mask
 
 OK, NO, HEAT, ME = "#19a974", "#ff5a4f", "#ffae2b", "#8c9bb8"
+ENDS_M = 2000.0  # left out of every figure, at both ends of the route
 CREDITS = ("Built with PriorLabs-TabPFN · terrain: IGN RGE ALTI® (Licence Ouverte 2.0) · bridges and tunnels: "
            "© OpenStreetMap contributors (ODbL) · weather: Open-Meteo, Météo-France models (CC BY 4.0) · "
            "fonts: Saira (SIL Open Font License)")
@@ -178,6 +181,8 @@ def skyline(dist_km, elev, ridge_colours) -> str:
     d = np.asarray(dist_km, float)
     z = np.asarray(elev, float)
     n = len(d)
+    if n < 2:
+        return ""
     step = max(1, n // 900)
     idx = np.arange(0, n, step)
     W, H = 1000.0, 300.0
@@ -209,9 +214,14 @@ def hero(kicker: str, title: str, sub: str, dist_km, elev, ridge_colours) -> str
 
 
 def roadbook(dist_km, elev, fills, flags=(), strip=None) -> str:
-    """Elevation profile with HTML labels: `fills[i]` colours the stretch i..i+1; `flags` are (km, label)."""
+    """Elevation profile with HTML labels: `fills[i]` colours the stretch i..i+1; `flags` are (km, label).
+
+    The km axis is the route's own, so a profile that starts at km 2 says so.
+    """
     d = np.asarray(dist_km, float)
     z = np.asarray(elev, float)
+    if len(d) < 2:
+        return '<p class="note">Too short to draw without its first and last 2 km.</p>'
     step = max(1, len(d) // 1200)
     idx = np.arange(0, len(d), step)
     W, H = 1000.0, 200.0
@@ -235,17 +245,21 @@ def roadbook(dist_km, elev, fills, flags=(), strip=None) -> str:
     placed: list[float] = []
     for km, label in flags:
         frac = (km - d[0]) / max(d[-1] - d[0], 1e-9)
+        if not 0 <= frac <= 1:
+            continue  # in the ends left out: its card below still lists it
         if any(abs(frac - q) < 0.075 for q in placed):
             continue  # too close to a flag already drawn: the cards below list every passage
         placed.append(frac)
         zk = float(np.interp(km, d, z))
         fl.append(f'<div class="flag" style="left:{100 * (km - d[0]) / max(d[-1] - d[0], 1e-9):.2f}%;'
                   f'top:{100 * (1 - (zk - lo2) / (hi2 - lo2)):.1f}%">{e(label)}</div>')
-    total = d[-1] - d[0]
+    d0, d1 = float(d[0]), float(d[-1])
+    total = d1 - d0
     tick = next(t for t in (1, 2, 5, 10, 20, 25, 50) if total / t <= 7)
-    ticks = [k for k in np.arange(0, total + 1e-9, tick)]
-    xs = "".join(f'<span style="left:{100 * k / max(total, 1e-9):.2f}%">{k:.0f}</span>' for k in ticks[:-1] if total - k > tick * 0.4)
-    xs += f'<span style="left:100%">{total:.1f} km</span>'
+    ticks = [k for k in np.arange(np.ceil(d0 / tick) * tick, d1, tick) if k - d0 > tick * 0.4 and d1 - k > tick * 0.4]
+    xs = f'<span style="left:0%">{f"{d0:.1f}".removesuffix(".0")}</span>'
+    xs += "".join(f'<span style="left:{100 * (k - d0) / max(total, 1e-9):.2f}%">{k:.0f}</span>' for k in ticks)
+    xs += f'<span style="left:100%">{d1:.1f} km</span>'
     strip_html = ""
     if strip is not None:
         cells = []
@@ -329,10 +343,12 @@ def plan_page(p, name: str, cond: str, prof) -> str:
     ok = np.array([st[i].possible for i in idx]) if st else np.ones(prof.dist.size, bool)
     passages = sorted(p.passages, key=lambda x: x.start_m)
     up = float(np.sum(np.clip(np.diff(prof.elev), 0, None)))
-    d_km = prof.dist / 1000.0
+    keep = trim_mask(prof.dist, ENDS_M)
+    kept = np.flatnonzero(keep)
+    d_km, z = prof.dist[keep] / 1000.0, prof.elev[keep]
     head = hero(f"Before the ride · {e(cond.split(',')[0]) if cond else ''}", name,
                 f"{sh.km_total:.1f} km · {up:,.0f} m up · about {hm(sh.time_total_s)} riding easy".replace(",", " "),
-                d_km, prof.elev, [None if o else NO for o in ok])
+                d_km, z, [None if ok[i] else NO for i in kept])
     score = f"""<section class="card score" aria-label="Share of the route in Zone 2">
 <div class="metric"><div class="big">{pct(sh.km_share)}<small>%</small></div><div class="lbl">of the kilometres</div>
 <div class="track"><i style="width:{100 * sh.km_share:.1f}%"></i></div><div class="rng">{pct(lo.km_share)}–{pct(hi.km_share)} % depending on the day</div></div>
@@ -342,22 +358,22 @@ def plan_page(p, name: str, cond: str, prof) -> str:
 <div class="facts"><span class="chip">{e(cond)}</span>{f'<span class="chip no">{len(passages)} passage{"s" if len(passages) != 1 else ""} impossible · {sum(x.length_m for x in passages) / 1000:.1f} km</span>' if passages else ''}</div>
 </section>"""
     flags = [((x.start_m + x.end_m) / 2000, str(i + 1)) for i, x in enumerate(passages)]
-    book = (f'<section class="card"><h2>Roadbook</h2>{roadbook(d_km, prof.elev, [OK if o else NO for o in ok], flags)}'
+    book = (f'<section class="card"><h2>Roadbook</h2>{roadbook(d_km, z, [OK if ok[i] else NO for i in kept], flags)}'
             f'<div class="legend"><span><i style="background:{OK}"></i>Zone 2 possible</span>'
-            f'<span><i style="background:{NO}"></i>impossible, even at your slowest</span></div></section>')
+            f'<span><i style="background:{NO}"></i>impossible, even at your slowest</span><span>first and last 2 km left out</span></div></section>')
     items = []
     for i, x in enumerate(passages):
         items.append(f"""<li class="climb"><div class="n">{i + 1}</div><div><div class="where">km {x.start_m / 1000:.1f} · {x.length_m / 1000:.1f} km</div>
 <div class="grade">{100 * x.mean_grade:.1f} % average, up to {100 * x.max_grade:.1f} %</div></div>
-<div class="need"><b>{times(x.max_ratio)}</b><small>the ceiling</small></div>{sparkline(d_km, prof.elev, x.start_m / 1000, x.end_m / 1000)}
+<div class="need"><b>{times(x.max_ratio)}</b><small>the ceiling</small></div>{sparkline(d_km, z, x.start_m / 1000, x.end_m / 1000)}
 <div class="slow">{hm(x.time_s)} at your slowest pace</div></li>""")
     climbs = (f'<section class="card"><h2>Where Zone 2 is impossible <span class="count">{len(passages)}</span></h2>'
               f'<ol class="climbs">{"".join(items)}</ol><p class="note">The multiple is the power of your slowest pace there, '
               f'divided by your Zone 2 ceiling for the temperature and the hours ridden by then.</p></section>' if passages else
               '<section class="card"><h2>Where Zone 2 is impossible</h2><p>Nowhere on this route, in these conditions.</p></section>')
-    keep = trim_mask(prof.dist, 2000.0) & np.isfinite(prof.lat)
     mid_idx = [(int(np.searchsorted(prof.dist, (x.start_m + x.end_m) / 2)), str(i + 1)) for i, x in enumerate(passages)]
-    route = (f'<section class="card shape"><h2>The route</h2>{shape(prof.lat, prof.lon, [OK if o else NO for o in ok], keep, mid_idx)}'
+    route = (f'<section class="card shape"><h2>The route</h2>'
+             f'{shape(prof.lat, prof.lon, [OK if o else NO for o in ok], keep & np.isfinite(prof.lat), mid_idx)}'
              f'<p class="note">The first and last 2 km are left out, and no map is loaded.</p></section>')
     body = f"{head}<main>{score}{book}{climbs}{route}</main>"
     return document(f"z2analyzer · {name}", body)
@@ -366,18 +382,19 @@ def plan_page(p, name: str, cond: str, prof) -> str:
 def review_page(r, rd, z2_top: float, cool: float) -> str:
     prof = rd.profile
     ps = r.per_second
-    d_km = prof.dist / 1000.0
     bins = np.clip(np.searchsorted(prof.dist, rd.dist), 0, prof.dist.size - 1)
     cause = [None] * prof.dist.size
     for name, col in (("me", ME), ("heat", HEAT), ("road", NO)):
         for k in np.flatnonzero(np.bincount(bins[ps[name]], minlength=prof.dist.size)):
             cause[k] = col
     poss = np.interp(prof.dist, rd.dist, ps["possible"].astype(float)) >= 0.5
+    kept = np.flatnonzero(trim_mask(prof.dist, ENDS_M))
+    d_km, z, cause = prof.dist[kept] / 1000.0, prof.elev[kept], [cause[i] for i in kept]
     when = datetime.fromtimestamp(rd.start_epoch, timezone.utc).astimezone()
     air = float(np.nanmedian(rd.temp_air[rd.moving]))
     head = hero(f"After the ride · {when:%a %d %b %Y} · {when:%H:%M}", f"{r.above_min:.0f} min above Zone 2",
                 f"{r.shares.km_total:.1f} km · {r.moving_min:.0f} min moving · air {air:.0f} °C · Zone 2 up to {z2_top:.0f} bpm",
-                d_km, prof.elev, cause)
+                d_km, z, cause)
     tot = max(r.above_min, 1e-9)
     parts = [("the road", r.road_min, NO), ("the heat", r.heat_min, HEAT), ("me", r.me_min, ME)]
     split = "".join(f'<div style="flex:{max(m, 0.001):.3f};background:{c}"><b>{m:.0f}</b><span>{lab}</span></div>'
@@ -391,8 +408,9 @@ def review_page(r, rd, z2_top: float, cool: float) -> str:
 <b>The heat</b>: possible in the cool, not that day. <b>Me</b>: Zone 2 was possible there.</p>
 <div class="facts"><span class="chip">road {r.road_range[0]:.0f}–{r.road_range[1]:.0f} · heat {r.heat_range[0]:.0f}–{r.heat_range[1]:.0f} · me {r.me_range[0]:.0f}–{r.me_range[1]:.0f} min</span>{level}</div></section>"""
     heart = _heart_card(r, rd, z2_top)
-    book = (f'<section class="card"><h2>Along the road</h2>{roadbook(d_km, prof.elev, [OK if o else NO for o in poss], (), cause)}'
-            f'<div class="legend"><span><i style="background:{OK}"></i>Zone 2 possible that day</span><span><i style="background:{NO}"></i>impossible</span></div>'
+    book = (f'<section class="card"><h2>Along the road</h2>{roadbook(d_km, z, [OK if poss[i] else NO for i in kept], (), cause)}'
+            f'<div class="legend"><span><i style="background:{OK}"></i>Zone 2 possible that day</span><span><i style="background:{NO}"></i>impossible</span>'
+            f'<span>first and last 2 km left out</span></div>'
             f'<div class="legend"><span>Band, above Zone 2:</span><span><i style="background:{NO}"></i>the road</span>'
             f'<span><i style="background:{HEAT}"></i>the heat</span><span><i style="background:{ME}"></i>me</span></div></section>')
     g = r.gear
@@ -467,8 +485,9 @@ section.group h2 { margin:20px 2px 10px; }
 def gallery_page(title: str, kicker: str, sub: str, groups, skyline_of=None) -> str:
     """An index: `groups` are (heading, tiles); a tile is (href, kicker, title, body_html, bar) with bar [(value, colour)]."""
     if skyline_of is not None:
-        d_km, elev = skyline_of
-        head = hero(e(kicker), title, sub, d_km, elev, [None] * len(d_km))
+        d_km, elev = (np.asarray(a, float) for a in skyline_of)
+        keep = trim_mask(d_km * 1000.0, ENDS_M)
+        head = hero(e(kicker), title, sub, d_km[keep], elev[keep], [None] * int(keep.sum()))
     else:
         head = f'<header class="hero" style="height:220px"><div class="hero-text"><div class="kicker">{e(kicker)}</div><h1>{e(title)}</h1><div class="sub">{sub}</div></div></header>'
     parts = []

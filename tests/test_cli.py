@@ -53,6 +53,7 @@ def test_plan_and_review_end_to_end(tmp_path, capsys):
     assert "power_min_w" not in v["stretches"][0]  # no watts unless asked
     text = page.read_text()
     assert "<svg" in text and "http://" not in text.replace("http://www.w3.org", "") and "Built with PriorLabs-TabPFN" in text
+    assert '<span style="left:0%">2</span>' in text  # the profile starts at km 2
 
     # A ride up the same road at 52 rpm in 34x34 on the ramp, heart above 145 bpm there.
     fit = tmp_path / "ride.fit"
@@ -67,6 +68,7 @@ def test_plan_and_review_end_to_end(tmp_path, capsys):
     assert r["above_min"] > 0 and r["road_min"] > 0.8 * r["above_min"]
     assert r["gear"]["impossible_smallest_gear_share"] > 0.9
     assert "imposed by the road" in capsys.readouterr().out
+    assert '<span style="left:0%">2</span>' in (tmp_path / "review.html").read_text()
 
 
 def ramp_ride(lat):

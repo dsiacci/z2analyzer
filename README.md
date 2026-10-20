@@ -126,8 +126,9 @@ work out the rider's mass.
   CPU, with no account, no API and no cost per analysis.
 - The local page (`--html`) loads nothing from anywhere: its fonts travel
   inside it, there are no scripts and no map tiles (a tile server would learn
-  which area you looked at). It draws the route's shape without its first and
-  last 2 km.
+  which area you looked at). Its figures (the route's shape, the profile, the
+  climbs) leave out the first and last 2 km, so a screenshot doesn't show
+  where you start; the numbers still count the whole route.
 
 ## Data
 
