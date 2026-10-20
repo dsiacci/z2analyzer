@@ -26,6 +26,12 @@
    "say": "After the ride, it reads the FIT file: 119 minutes above Zone 2. 45 imposed by the road, 5 by the heat, 70 mine."
   },
   {
+   "id": "heart",
+   "shot": "review:heart",
+   "min": 5.0,
+   "say": ""
+  },
+  {
    "id": "proof",
    "shot": "card:proof",
    "min": 7.0,

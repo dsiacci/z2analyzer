@@ -18,16 +18,38 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 W, H, FPS, FADE, LEAD = 1920, 1080, 30, 0.5, 0.35
 
-PALETTE = """:root { --bg:#e9eeec; --card:#ffffff; --ink:#15202a; --muted:#566370; --line:rgba(21,32,42,.12);
-  --green:#2f9e6e; --red:#d9534f; --amber:#e0a030; --grey:#8a94a6; }
-* { box-sizing:border-box; } html, body { margin:0; height:100%; }
-body { background:var(--bg); color:var(--ink); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  display:grid; place-items:center; }"""
+sys.path.insert(0, str(HERE.parent / "src"))
+from z2analyzer.page import CSS, HEAT, ME, NO, OK, fonts_css  # noqa: E402
+
+CARD_CSS = """
+html, body { height:100%; } body { display:grid; place-items:center; background:var(--paper); }
+.dawn { position:fixed; inset:0; color:#fff; overflow:hidden;
+  background:radial-gradient(circle at 74% 84%, rgba(255,233,190,.95) 0 2.6%, rgba(255,196,130,.55) 5%, rgba(255,160,110,0) 16%),
+    linear-gradient(180deg, var(--sky1) 0%, var(--sky2) 34%, var(--sky3) 62%, var(--sky4) 84%, var(--sky5) 100%); }
+.dawn svg { position:absolute; left:0; right:0; bottom:0; width:100%; height:50%; }
+.dawn .glow { filter:drop-shadow(0 0 5px rgba(255,120,90,.95)); }
+.centre { position:absolute; inset:0; display:grid; place-content:center; text-align:center; padding-bottom:12vh; }
+.brand { font:800 128px/.9 var(--display); letter-spacing:.01em; }
+.line { font:800 58px/1 var(--display); text-transform:uppercase; margin-top:22px; }
+.subl { font:500 26px/1.3 var(--ui); color:rgba(255,255,255,.82); margin-top:12px; }
+.credits { font:500 23px/1.6 var(--ui); color:rgba(255,255,255,.86); margin-top:20px; }
+.board { width:1100px; } .board h1 { font:800 60px/1 var(--display); text-transform:uppercase; margin:0 0 26px; }
+.board table { width:100%; border-collapse:separate; border-spacing:0 12px; font:600 32px/1.1 var(--ui); font-variant-numeric:tabular-nums; }
+.board th { text-align:left; font:700 18px/1 var(--ui); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding:0 22px; }
+.board td { background:var(--card); padding:22px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.board td:first-child { border-left:1px solid var(--line); border-radius:16px 0 0 16px; }
+.board td:last-child { border-right:1px solid var(--line); border-radius:0 16px 16px 0; }
+.board td.win { color:var(--ok); font:800 44px/1 var(--display); } .board td.lose { color:var(--muted); font:600 40px/1 var(--display); }
+.board p { font:500 22px/1.4 var(--ui); color:var(--muted); margin:16px 0 0; }
+.board .split { height:150px; border-radius:20px; } .board .split div { min-width:150px; } .board .split b { font-size:76px; }
+.board .split span { font-size:20px; white-space:nowrap; }
+"""
 
 
 def run(cmd: list[str]) -> str:
@@ -50,61 +72,51 @@ def shoot(html_file: Path, png: Path) -> None:
          "--force-device-scale-factor=1.5", "--window-size=1280,720", f"--screenshot={png}", html_file.resolve().as_uri()])
 
 
-def card(kind: str, spec: dict) -> str:
+def card(kind: str, spec: dict, skyline_svg: str) -> str:
     e = html.escape
     if kind == "title":
-        body = (f'<div class="t"><div class="brand">{e(spec["brand"])}</div><div class="line">{e(spec["line"])}</div>'
-                f'<div class="sub">{e(spec["sub"])}</div></div>')
-        css = """.t { text-align:center; } .brand { font-weight:800; font-size:92px; letter-spacing:-.02em; }
-.brand::after { content:""; display:block; height:8px; width:220px; margin:14px auto 0; border-radius:4px;
-  background:linear-gradient(90deg, var(--green) 0 70%, var(--red) 70% 100%); }
-.line { font-size:44px; font-weight:700; margin-top:28px; } .sub { font-size:24px; color:var(--muted); margin-top:12px; }"""
-    elif kind == "proof":
-        rows = "".join(
-            f'<tr><td>{e(r[0])}</td><td class="{"win" if r[3] == "tabpfn" else ""}">{e(r[1])}</td>'
-            f'<td class="{"win" if r[3] == "line" else ""}">{e(r[2])}</td></tr>' for r in spec["rows"])
-        body = (f'<div class="p"><h1>{e(spec["title"])}</h1><table><tr><th></th><th>TabPFN v2</th><th>Straight line</th></tr>'
-                f'{rows}</table><p>{e(spec["note"])}</p></div>')
-        css = """.p { width:1060px; } h1 { font-size:40px; margin:0 0 26px; }
-table { width:100%; border-collapse:separate; border-spacing:0 10px; font-size:30px; font-variant-numeric:tabular-nums; }
-th { text-align:left; font-size:18px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:0 20px; }
-td { background:var(--card); padding:18px 20px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
-td:first-child { border-left:1px solid var(--line); border-radius:14px 0 0 14px; font-weight:600; }
-td:last-child { border-right:1px solid var(--line); border-radius:0 14px 14px 0; }
-td.win { color:var(--green); font-weight:800; } td.win::after { content:" ✓"; }
-p { font-size:22px; color:var(--muted); margin-top:18px; }"""
-    elif kind == "total":
-        tot = spec["road"] + spec["heat"] + spec["me"]
-        seg = "".join(f'<div style="flex:{v};background:var(--{c})"><b>{v}</b><span>{lab}</span></div>'
-                      for v, c, lab in ((spec["road"], "red", "the road"), (spec["heat"], "amber", "the heat"), (spec["me"], "grey", "me")))
-        body = f'<div class="g"><h1>{e(spec["title"])}</h1><div class="bar">{seg}</div><p>{tot} minutes, one cause each</p></div>'
-        css = """.g { width:1140px; } h1 { font-size:46px; margin:0 0 30px; }
-.bar { display:flex; height:150px; border-radius:18px; overflow:hidden; }
-.bar div { display:flex; flex-direction:column; justify-content:center; align-items:center; color:#fff; min-width:120px; }
-.bar b { font-size:54px; line-height:1; } .bar span { font-size:22px; margin-top:6px; }
-p { font-size:24px; color:var(--muted); }"""
-    else:  # outro
+        body = (f'<div class="dawn">{skyline_svg}<div class="centre"><div class="brand">{e(spec["brand"])}</div>'
+                f'<div class="line">{e(spec["line"])}</div><div class="subl">{e(spec["sub"])}</div></div></div>')
+    elif kind == "outro":
         lines = "".join(f"<div>{e(x)}</div>" for x in spec["lines"])
-        body = f'<div class="o"><div class="brand">{e(spec["brand"])}</div>{lines}</div>'
-        css = """.o { text-align:center; font-size:26px; color:var(--muted); line-height:1.7; }
-.brand { font-size:80px; font-weight:800; color:var(--ink); margin-bottom:18px; }"""
-    return f"<!doctype html><html><head><meta charset='utf-8'><style>{PALETTE}{css}</style></head><body>{body}</body></html>"
+        body = f'<div class="dawn">{skyline_svg}<div class="centre"><div class="brand">{e(spec["brand"])}</div><div class="credits">{lines}</div></div></div>'
+    elif kind == "proof":
+        rows = "".join(f'<tr><td>{e(r[0])}</td><td class="{"win" if r[3] == "tabpfn" else "lose"}">{e(r[1])}</td>'
+                       f'<td class="{"win" if r[3] == "line" else "lose"}">{e(r[2])}</td></tr>' for r in spec["rows"])
+        body = (f'<div class="board"><h1>{e(spec["title"])}</h1><table><tr><th></th><th>TabPFN v2</th><th>Straight line</th></tr>{rows}</table>'
+                f'<p>{e(spec["note"])}</p></div>')
+    else:  # total
+        parts = ((spec["road"], NO, "the road"), (spec["heat"], HEAT, "the heat"), (spec["me"], ME, "me"))
+        split = "".join(f'<div style="flex:{v};background:{c}"><b>{v}</b><span>{lab}</span></div>' for v, c, lab in parts)
+        body = (f'<div class="board"><h1>{e(spec["title"])}</h1><div class="split">{split}</div>'
+                f'<p>Each minute above Zone 2 goes to one cause: the road, the heat, or me.</p></div>')
+    return (f"<!doctype html><html><head><meta charset='utf-8'><style>{fonts_css()}{CSS}{CARD_CSS}</style></head>"
+            f"<body>{body}</body></html>")
+
+
+def skyline_of(page_html: str) -> str:
+    """The two skyline layers of a page's hero, for the title and closing cards."""
+    m = re.search(r'<header class="hero">(.*?)<div class="hero-text">', page_html, re.S)
+    return m.group(1) if m else ""
 
 
 def page_variant(src: Path, view: str, row: str | None) -> str:
     """The tool's own page, with the scene's part on screen and its highlight drawn in."""
     s = src.read_text(encoding="utf-8")
     css = {
-        # Headline numbers ringed in their own colour.
-        "top": "h1 .g, h1 .r, h1 .a, h1 .m { border-radius:8px; box-shadow:0 0 0 5px var(--card), 0 0 0 9px currentColor; }"
-               " .bar { box-shadow:0 0 0 4px var(--card), 0 0 0 8px var(--ink); }",
-        # Profile and table of passages, with one row lit up.
-        "passage": "header, .stats, .row > .card:first-child { display:none; } .row { grid-template-columns:1fr !important; }"
-                   " main { max-width:1500px; zoom:.84; padding-top:8px; } tr.hl td { background:rgba(217,83,79,.14); font-weight:700; }"
-                   " tr.hl td:first-child { box-shadow:inset 5px 0 0 var(--red); }",
+        # The headline numbers (plan) or the split of the minutes (review), ringed.
+        "top": ".metric { border-radius:14px; padding:10px 12px; background:color-mix(in srgb, var(--ok) 9%, var(--card));"
+               " box-shadow:0 0 0 3px var(--ok); } .split { box-shadow:0 0 0 5px var(--card), 0 0 0 9px var(--ink); }",
+        # The roadbook and the cards of the passages, one of them lit up.
+        "passage": ".hero, section.score, .shape, footer { display:none !important; } main { margin-top:22px; max-width:1240px; zoom:.8; }"
+                   " .climb.hl { background:color-mix(in srgb, var(--no) 14%, var(--card)); box-shadow:0 0 0 3px var(--no); }",
+        # The heart rate alone, the minutes above Zone 2 coloured by cause.
+        "heart": ".hero, main > section:not(:nth-of-type(2)), footer { display:none !important; }"
+                 " main { margin-top:40px; max-width:1180px; } .chart { height:420px !important; }",
     }[view]
     if row:
-        s = re.sub(r"<tr( class=\"longest\")?><td>" + re.escape(row) + r"</td>", f'<tr class="hl"><td>{row}</td>', s, count=1)
+        s = re.sub(r'<li class="climb">(<div class="n">\d+</div><div><div class="where">)' + re.escape(row),
+                   r'<li class="climb hl">\1' + row, s, count=1)
     return s.replace("</style>", css + "</style>", 1)
 
 
@@ -137,7 +149,7 @@ def main() -> int:
         kind, view = sc["shot"].split(":")
         page = shots / f"{sc['id']}.html"
         if kind == "card":
-            page.write_text(card(view, conf["cards"][view]), encoding="utf-8")
+            page.write_text(card(view, conf["cards"][view], skyline_of(pages["plan"].read_text(encoding="utf-8"))), encoding="utf-8")
         else:
             page.write_text(page_variant(pages[kind], view, sc.get("row")), encoding="utf-8")
         png = shots / f"{sc['id']}.png"
@@ -192,8 +204,10 @@ def main() -> int:
 
     lines = []
     for k, sc in enumerate(plan_):
+        if not sc["say"]:
+            continue  # a silent scene
         a0 = starts[k] + LEAD
-        lines.append(f"{k + 1}\n{srt_time(a0)} --> {srt_time(a0 + sc['spoken'])}\n{sc['say']}\n")
+        lines.append(f"{len(lines) + 1}\n{srt_time(a0)} --> {srt_time(a0 + sc['spoken'])}\n{sc['say']}\n")
     (out / "z2analyzer-demo.srt").write_text("\n".join(lines), encoding="utf-8")
     print(f"{target}: {total:.1f} s, {len(plan_)} scenes")
     return 0
