@@ -4,8 +4,8 @@ How much of a ride can really stay in Zone 2?
 
 On some slopes, even in your smallest gear and at the slowest cadence you can
 actually hold, the power the road asks for is above your Zone 2 ceiling. Those
-minutes are not a lack of discipline: the road made them. z2analyzer sorts
-this out for you, before and after the ride.
+minutes are the road's, not yours. z2analyzer sorts out which minutes are
+which, before and after the ride, so you don't have to read the curves.
 
 - **Before**: give it a GPX and a start time (or a temperature). It tells you
   the share of the route you can ride in Zone 2, **in kilometres and in time**
@@ -18,11 +18,16 @@ this out for you, before and after the ride.
 
 ```text
 $ z2analyzer review ride.fit --limits limits.json --z2-top 145
-74 min above Zone 2: 31 imposed by the road, 9 by the heat, 34 mine.
-Zone 2 was possible on 81 % of the kilometres, 64 % of the time.
+119 min above Zone 2: 45 imposed by the road, 5 by the heat, 70 mine.
+Zone 2 was possible on 88 % of the kilometres, 72 % of the time.
+
+$ z2analyzer plan loop.gpx --limits limits.json --when "2026-10-24 08:30"
+Zone 2 is possible on 89 % of the kilometres, but 70 % of the time.
+11 passages where it is not: 6.8 km, 1 h 02 even at your slowest pace.
 ```
 
-*(the shape of the output, not a result: results are in [Results](#results))*
+*(the same 59.6 km loop: a ride on 4 October, then planned for a Saturday
+morning; more in [Results](#results))*
 
 ## How it works
 
@@ -54,7 +59,15 @@ number:
    into time.
 
 Each learned table keeps a low, middle and high value, so the verdicts come
-with a range.
+with a range. `validate` scores TabPFN, a linear regression and a constant on
+rides they never saw, and `learn --models` keeps the winner of each table: on
+the rides it was built on, TabPFN for the speed and a line for the rest (see
+[Results](#results)).
+
+**The day's level.** At the same power, the heart does not sit at the same
+level every day. After a ride, z2analyzer measures that day's level on the
+ride's own steady stretches and moves the ceiling with it; before a ride, the
+range it gives is how far that level moved between your rides.
 
 **A check that needs no model.** The gear you were in is recovered from speed
 and cadence (speed ÷ (cadence × wheel) is the chainring/cog ratio). Where the
@@ -72,8 +85,9 @@ z2analyzer structures --bbox 41.3 8.5 43.1 9.6 --out bridges.json
 
 # Your rides → one-second series without positions → your limits
 z2analyzer prepare rides/*.fit --terrain dem/ --structures bridges.json --out prepared/
-z2analyzer validate prepared/                     # how well the models predict rides they never saw
-z2analyzer learn prepared/ --z2-top 145 --out limits.json
+z2analyzer validate prepared/ --out validate.json # how well each model predicts rides it never saw
+z2analyzer learn prepared/ --z2-top 145 --models hr=linear cadence=linear speed=tabpfn \
+    --validation validate.json --out limits.json  # the winner of each table on your rides
 
 # Before a ride (temperature from the Météo-France forecast at the start time)
 export Z2_MASS_KG=...                             # your mass: read from the environment, never stored or printed
@@ -123,8 +137,17 @@ models (Copernicus DEM) need a small reader.
 
 ## Results
 
-*(to come: the rides they were measured on, leave-one-ride-out errors, TabPFN
-against the baselines, the gear check, and what failed)*
+On one rider's ten outdoor rides with a power meter (Corsica, August to
+October 2026, 24.7 hours), every ride judged with limits learned from the
+nine others: **637 minutes above Zone 2, of which the road made 98, the heat
+17 and the rider 522.** Where Zone 2 was possible and the heart was above it,
+an easier gear was still there 91 % of the time.
+
+TabPFN won one of its three jobs: it predicts the speed with half the error of
+a linear regression (0.70 against 1.20 m/s) on rides it never saw. A linear
+regression won the heart rate (6.5 against 8.1 bpm) and, barely, the lowest
+cadence; the reason, and what it changed in the tool, is in
+[docs/results.md](docs/results.md), with every table and what failed.
 
 ## Limits
 
@@ -135,7 +158,17 @@ against the baselines, the gear check, and what failed)*
 - The numbers hold for one bike and one rider: the models learn from that
   rider's rides, and the gearing and masses are parameters.
 - The heart rate also depends on sleep, fatigue and hydration, which no FIT
-  file records: the ranges show part of that, not all of it.
+  file records: after a ride the day's level absorbs it, before a ride the
+  range shows it.
+- The models only know the conditions of your rides. Outside them (a colder
+  morning, a steeper grade, a longer ride) the tables hold their edge value
+  instead of extrapolating, and `plan` says when the forecast is colder than
+  any ride it learned from.
+- The heat share only counts what the model learned about temperature across
+  your rides; the rest of a hot day's extra heart rate lands in that day's
+  level.
+- It counts minutes, not intensity: where the road made Zone 2 impossible, it
+  does not say how far above it you had to go.
 - A finding about a route or a ride, not training advice and not medical
   advice.
 
