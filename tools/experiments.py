@@ -62,7 +62,51 @@ def hr_table(rides, size_s=30, extra=False, drop_temp=False):
     keep = c["full"] & np.isfinite(c["hr"])
     feats = ["p60", "p300"] + (["p20", "p900"] if extra else []) + ([] if drop_temp else ["temp"]) + ["elapsed_min"]
     return {"X": np.column_stack([c[f][keep] for f in feats]).astype(np.float32), "y": c["hr"][keep].astype(np.float32),
-            "ride": c["ride"][keep], "features": feats}
+            "ride": c["ride"][keep], "start_s": c["start_s"][keep], "features": feats}
+
+
+def ride_offsets(table, idx):
+    """Each training ride's level: its mean residual from a line fitted on all of them."""
+    lin = LinearModel(table["X"][idx], table["y"][idx])
+    resid = table["y"][idx] - lin.quantiles(table["X"][idx], (0.5,))[:, 0]
+    rides = table["ride"][idx]
+    return {r: float(np.median(resid[rides == r])) for r in set(rides.tolist())}
+
+
+def loo_day_level(table, make, normalize: bool):
+    """The day's level measured on the first half of the ride, the shape judged on the second half.
+
+    With `normalize`, the training rides are first brought to a common level
+    (their own offsets removed), so the model learns the shape only.
+    """
+    rides = sorted(set(table["ride"].tolist()))
+    ys, qs, per = [], [], {}
+    t0 = time.time()
+    for r in rides:
+        test = table["ride"] == r
+        train = ~test
+        y_train = table["y"][train].astype(float)
+        if normalize:
+            off = ride_offsets(table, train)
+            y_train = y_train - np.array([off[x] for x in table["ride"][train]])
+        m = make(table["X"][train], y_train)
+        q = m.quantiles(table["X"][test], QUANTILES)
+        y = table["y"][test].astype(float)
+        s = table["start_s"][test]
+        first = s <= np.median(s)
+        delta = float(np.median(y[first] - q[first, QUANTILES.index(0.5)]))
+        q2, y2 = q[~first] + delta, y[~first]
+        ys.append(y2)
+        qs.append(q2)
+        per[r] = {"n": int((~first).sum()), "delta": delta, "mae": float(np.mean(np.abs(q2[:, QUANTILES.index(0.5)] - y2))),
+                  "bias": float(np.mean(q2[:, QUANTILES.index(0.5)] - y2))}
+    y = np.concatenate(ys)
+    q = np.concatenate(qs)
+    lo, hi = q[:, QUANTILES.index(0.1)], q[:, QUANTILES.index(0.9)]
+    return {"mae": float(np.mean(np.abs(q[:, QUANTILES.index(0.5)] - y))), "bias": float(np.mean(q[:, QUANTILES.index(0.5)] - y)),
+            "coverage_80": float(np.mean((y >= lo) & (y <= hi))), "pinball_main": pinball(y, q[:, QUANTILES.index(0.5)], 0.5),
+            "pinball_mean": float(np.mean([pinball(y, q[:, i], t) for i, t in enumerate(QUANTILES)])),
+            "n": int(len(y)), "seconds": round(time.time() - t0), "per_ride": per}
 
 
 def cadence_table(rides, size_s=30):
@@ -108,25 +152,29 @@ def main() -> int:
     rides = [RideData.load(f) for f in sorted(Path(a.prepared).glob("*.npz"))]
     out = json.loads(Path(a.out).read_text()) if Path(a.out).exists() else {}
     tab = lambda X, y: TabPFNModel(X, y)  # noqa: E731
+    hr60 = lambda: hr_table(rides, 60)  # noqa: E731
     variants = {
-        "hr30 linear": (lambda: hr_table(rides, 30), LinearModel, 0.5),
-        "hr60 linear": (lambda: hr_table(rides, 60), LinearModel, 0.5),
-        "hr60 tabpfn": (lambda: hr_table(rides, 60), tab, 0.5),
-        "hr60+lags linear": (lambda: hr_table(rides, 60, extra=True), LinearModel, 0.5),
-        "hr60+lags tabpfn": (lambda: hr_table(rides, 60, extra=True), tab, 0.5),
-        "hr60 no-temp tabpfn": (lambda: hr_table(rides, 60, drop_temp=True), tab, 0.5),
-        "hr60 hybrid": (lambda: hr_table(rides, 60), Hybrid, 0.5),
-        "cadence linear": (lambda: cadence_table(rides), LinearModel, 0.1),
-        "cadence tabpfn": (lambda: cadence_table(rides), tab, 0.1),
-        "cadence hybrid": (lambda: cadence_table(rides), Hybrid, 0.1),
+        # Across days: the model alone predicts a ride it never saw (before the ride).
+        "hr60 linear": (hr60, LinearModel, 0.5, None),
+        "hr60 tabpfn": (hr60, tab, 0.5, None),
+        "hr60 hybrid": (hr60, Hybrid, 0.5, None),
+        # Within a day: the level measured on the first half, the shape judged on the second (after the ride).
+        "hr60 day-level linear": (hr60, LinearModel, 0.5, False),
+        "hr60 day-level tabpfn": (hr60, tab, 0.5, False),
+        "hr60 day-level normalised linear": (hr60, LinearModel, 0.5, True),
+        "hr60 day-level normalised tabpfn": (hr60, tab, 0.5, True),
+        "hr60 day-level normalised hybrid": (hr60, Hybrid, 0.5, True),
+        "cadence linear": (lambda: cadence_table(rides), LinearModel, 0.1, None),
+        "cadence tabpfn": (lambda: cadence_table(rides), tab, 0.1, None),
+        "cadence hybrid": (lambda: cadence_table(rides), Hybrid, 0.1, None),
     }
-    for name, (table_fn, make, tau) in variants.items():
+    for name, (table_fn, make, tau, day) in variants.items():
         if a.only and name not in a.only:
             continue
         if name in out:
             continue
         t = table_fn()
-        res = loo(t, make, tau)
+        res = loo(t, make, tau) if day is None else loo_day_level(t, make, normalize=day)
         res["features"] = t["features"]
         out[name] = res
         print(f"{name:22s} MAE {res['mae']:.2f}  pinball@{tau} {res['pinball_main']:.3f}  80% holds {res['coverage_80']:.0%}"

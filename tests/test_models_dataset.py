@@ -104,3 +104,26 @@ def test_structures_follow_the_bridge_not_the_road_below(tmp_path):
     assert over[(over_lat > 41.9501) & (over_lat < 41.9508)].all() and not over[0] and not over[-1]
     under_lon = np.linspace(8.799, 8.801, 21)
     assert not s(np.full(21, 41.9504), under_lon).any()
+
+
+def test_heart_table_inverts_to_the_same_ceiling_and_follows_the_day_level():
+    from z2analyzer.limits import Limits
+    from z2analyzer.models import heart_table, learned_limits
+
+    heart = heart_table(FakeHeart(), temps=np.array([15.0, 25.0]), elapsed=np.array([0.0, 120.0]),
+                        powers=np.arange(30.0, 351.0, 1.0))
+    assert heart.ceiling(15.0, 0.0, 145.0)[0] == pytest.approx(137.5, abs=0.3)
+    assert heart.hr(25.0, 120.0, 137.5)[0] == pytest.approx(90 + 0.4 * 137.5 + 5 + 3.6, abs=0.05)
+    # A heart running 4 bpm high that day: the ceiling drops by 10 W.
+    assert heart.ceiling(15.0, 0.0, 145.0 - 4.0)[0] == pytest.approx(127.5, abs=0.3)
+
+    lim = learned_limits({"hr": FakeHeart(), "cadence": ConstantModel(np.zeros((5, 2)), np.full(5, 50.0)),
+                          "speed": LinearModel(np.random.default_rng(0).uniform(0, 1, (50, 2)), np.ones(50))}, 145.0)
+    assert lim.ceiling_w(15.0, 0.0, "mid", 0.0)[0] == pytest.approx(137.5, abs=0.6)
+    assert lim.ceiling_w(15.0, 0.0, "mid", 4.0)[0] == pytest.approx(127.5, abs=0.6)
+    # The day level is read back from a ride whose heart runs 6 bpm above the model.
+    n = 3600
+    p = np.full(n, 150.0)
+    hr = 90 + 0.4 * p + 0.5 * (20.0 - 15) + 0.03 * (np.arange(n) / 60.0) + 6.0
+    off = lim.day_offset(hr, p, p, np.full(n, 20.0), np.arange(n) / 60.0, np.ones(n, bool))
+    assert off == pytest.approx(6.0, abs=0.7)

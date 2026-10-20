@@ -66,11 +66,12 @@ def cmd_judge(a) -> int:
             cool = float(lim.notes.get("cool_c", 15.0))
             r = review(dist_m=rd.dist, speed_ms=rd.speed, hr=rd.hr, cadence_rpm=rd.cadence, moving=rd.moving,
                        temp_air_c=rd.temp_air, profile=rd.profile, rider=rider, limits=lim, z2_top_bpm=a.z2_top,
-                       cool_temp_c=cool)
+                       cool_temp_c=cool, power_w=rd.power)
             row[kind] = {"moving_min": r.moving_min, "above_min": r.above_min, "road_min": r.road_min,
                          "heat_min": r.heat_min, "me_min": r.me_min, "road_range": r.road_range,
                          "heat_range": r.heat_range, "me_range": r.me_range, "km_share": r.shares.km_share,
                          "time_share": r.shares.time_share, "cool_c": cool, "gear": r.gear,
+                         "day_offset_bpm": r.day_offset_bpm,
                          "passages": len(r.passages)}
         from datetime import datetime, timezone
 

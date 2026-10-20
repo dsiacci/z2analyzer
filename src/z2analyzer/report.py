@@ -75,6 +75,9 @@ def review_text(r, rd, z2_top: float, cool: float) -> str:
         f"heat {r.heat_range[0]:.0f}–{r.heat_range[1]:.0f}, me {r.me_range[0]:.0f}–{r.me_range[1]:.0f}.",
         f"The road: Zone 2 impossible even in the cool ({cool:.0f} °C). The heat: possible in the cool, not that day.",
     ]
+    if abs(r.day_offset_bpm) >= 0.5:
+        lines.append(f"That day the heart ran {abs(r.day_offset_bpm):.0f} bpm {'above' if r.day_offset_bpm > 0 else 'below'} "
+                     f"its usual level at the same power: the ceilings take it into account.")
     g = r.gear
     if g.get("impossible_s"):
         lines.append(f"Gear check: where Zone 2 was impossible, the smallest gear was in "

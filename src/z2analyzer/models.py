@@ -19,7 +19,7 @@ import os
 
 import numpy as np
 
-from .limits import CLIMB_MIN, ELAPSED, GRADES, POWERS, TEMPS, Limits, Table2D
+from .limits import CLIMB_MIN, ELAPSED, GRADES, POWERS, TEMPS, HeartTable, Limits, Table2D
 
 QUANTILES = (0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95)
 MAX_CONTEXT = 3000  # rows given to TabPFN as context (a small CPU stays at a few seconds)
@@ -193,8 +193,22 @@ LEARN_CLIMB = np.array([0.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0])
 LEARN_SPEED_POWERS = np.arange(0.0, 401.0, 20.0)
 
 
+def heart_table(hr_model, temps=LEARN_TEMPS, elapsed=LEARN_ELAPSED, powers=LEARN_POWERS) -> HeartTable:
+    """The heart-rate model on a grid (10, 50, 90 % quantiles), never decreasing with power."""
+    T, E, P = np.meshgrid(temps, elapsed, powers, indexing="ij")
+    X = np.column_stack([P.ravel(), P.ravel(), T.ravel(), E.ravel()])
+    q = hr_model.quantiles(X, (0.1, 0.5, 0.9)).reshape(len(temps), len(elapsed), len(powers), 3)
+    q = np.maximum.accumulate(q, axis=2)
+    q = np.sort(q, axis=3)  # quantiles stay in order
+    return HeartTable(np.asarray(temps, float), np.asarray(elapsed, float), np.asarray(powers, float), q)
+
+
 def learned_limits(models: dict, z2_top_bpm: float, notes: dict | None = None) -> Limits:
-    return Limits(ceiling=ceiling_table(models["hr"], z2_top_bpm, LEARN_TEMPS, LEARN_ELAPSED, LEARN_POWERS),
+    heart = heart_table(models["hr"])
+    T, E = np.meshgrid(heart.temps, heart.elapsed, indexing="ij")
+    c = {w: heart.ceiling(T.ravel(), E.ravel(), z2_top_bpm, w).reshape(T.shape) for w in ("low", "mid", "high")}
+    notes = dict(notes or {}, z2_top_bpm=z2_top_bpm)
+    return Limits(ceiling=Table2D(heart.temps, heart.elapsed, c["low"], c["mid"], c["high"]),
                   cadence=cadence_table(models["cadence"], LEARN_GRADES, LEARN_CLIMB),
                   speed=speed_table(models["speed"], LEARN_GRADES, LEARN_SPEED_POWERS),
-                  source=getattr(models["hr"], "name", "learned"), notes=notes)
+                  source=getattr(models["hr"], "name", "learned"), notes=notes, heart=heart)

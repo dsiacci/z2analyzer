@@ -59,15 +59,16 @@ def main(argv=None) -> int:
     s.add_argument("--baseline", choices=("linear", "fixed"),
                    help="instead of TabPFN: linear regressions on the same columns, or a fixed ceiling and cadence")
     s.add_argument("--n-estimators", type=int, default=4)
+    s.add_argument("--validation", help="validate.json: the spread of the heart's level between rides left out")
 
-    s = sub.add_parser("profile", help="rebuild a route's profile from the terrain (GPX in, .npz out)")
+    s = sub.add_parser("profile", help="rebuild a route's profile from the terrain (GPX or FIT in, .npz out)")
     s.add_argument("route")
     s.add_argument("--terrain", required=True)
     s.add_argument("--structures")
     s.add_argument("--out", required=True)
 
     s = sub.add_parser("plan", help="before a ride: how much of a route can stay in Zone 2")
-    s.add_argument("route", help="GPX file, or a profile from `z2analyzer profile`")
+    s.add_argument("route", help="GPX or FIT file, or a profile from `z2analyzer profile`")
     s.add_argument("--limits", required=True, help="limits.json from `z2analyzer learn` or `z2analyzer fixed`")
     s.add_argument("--terrain", help="terrain tiles (needed for a GPX)")
     s.add_argument("--structures")
@@ -77,6 +78,7 @@ def main(argv=None) -> int:
     when.add_argument("--cool", action="store_true", help="the coolest conditions of your rides")
     when.add_argument("--hot", action="store_true", help="30 °C")
     s.add_argument("--tz", default="Europe/Paris")
+    s.add_argument("--z2-top", type=float, help="top of your Zone 2, bpm (default: the one the limits were learned with)")
     s.add_argument("--mass-kg", type=float)
     s.add_argument("--watts", action="store_true", help="also print watts")
     s.add_argument("--json", help="write the full verdict as JSON")
@@ -227,9 +229,12 @@ def cmd_learn(args) -> int:
     else:
         models = {k: TabPFNModel(tabs[k]["X"], tabs[k]["y"], n_estimators=args.n_estimators) for k in ("hr", "cadence", "speed")}
     temp = tabs["hr"]["X"][:, 2]
+    day = _day_range(args.validation, "linear" if args.baseline == "linear" else "tabpfn") if args.validation else None
     notes = {"rides": [r.name for r in rides], "z2_top_bpm": args.z2_top,
              "temp_range_c": [float(np.percentile(temp, 2)), float(np.percentile(temp, 98))],
              "cool_c": float(np.percentile(temp, 10)), "learned": datetime.now(timezone.utc).isoformat(timespec="minutes")}
+    if day:
+        notes.update(day_offset_low_bpm=day[0], day_offset_high_bpm=day[1])
     lim = learned_limits(models, args.z2_top, notes)
     lim.source = args.baseline or "tabpfn"
     lim.save(args.out)
@@ -248,11 +253,18 @@ def _profile_of(route: str, terrain: str | None, structures: str | None):
     if not terrain:
         raise SystemExit("a GPX needs --terrain (folder of terrain tiles)")
     from .dem import Terrain
-    from .gpx import read_gpx
     from .structures import Structures
 
-    r = read_gpx(route)
     st = Structures(structures) if structures else None
+    if route.lower().endswith(".fit"):  # a ride done before, planned again
+        from .fitfile import read_fit
+
+        ride = read_fit(route)
+        ok = np.isfinite(ride.lat) & np.isfinite(ride.lon)
+        return build_profile(ride.lat[ok], ride.lon[ok], Terrain(terrain), st), ride.name
+    from .gpx import read_gpx
+
+    r = read_gpx(route)
     return build_profile(r.lat, r.lon, Terrain(terrain), st), r.name
 
 
@@ -288,7 +300,7 @@ def cmd_plan(args) -> int:
         t = args.temp if args.temp is not None else (30.0 if args.hot else float((lim.notes or {}).get("cool_c", 15.0)))
         temp = constant_temp(t)
         cond = f"{t:.0f} °C all along" + (" (the coolest of your rides)" if args.cool else "")
-    p = plan(prof, rider, lim, temp)
+    p = plan(prof, rider, lim, temp, top_bpm=args.z2_top)
     print(plan_text(p, name, cond, prof, watts=args.watts))
     if args.json:
         Path(args.json).write_text(json.dumps(_plan_json(p, name, cond, args.watts), indent=1), encoding="utf-8")
@@ -347,7 +359,7 @@ def cmd_review(args) -> int:
     cool = args.cool_temp if args.cool_temp is not None else float((lim.notes or {}).get("cool_c", 15.0))
     r = review(dist_m=rd.dist, speed_ms=rd.speed, hr=rd.hr, cadence_rpm=rd.cadence, moving=rd.moving,
                temp_air_c=rd.temp_air, profile=rd.profile, rider=rider, limits=lim, z2_top_bpm=args.z2_top,
-               cool_temp_c=cool)
+               cool_temp_c=cool, power_w=rd.power)
     print(review_text(r, rd, args.z2_top, cool))
     if args.json:
         Path(args.json).write_text(json.dumps(_review_json(r, rd, args.z2_top, cool), indent=1), encoding="utf-8")
@@ -359,7 +371,8 @@ def cmd_review(args) -> int:
 
 def _review_json(r, rd, z2_top, cool) -> dict:
     return {"ride": rd.name, "start_utc": datetime.fromtimestamp(rd.start_epoch, timezone.utc).isoformat(timespec="minutes"),
-            "z2_top_bpm": z2_top, "cool_c": cool, "moving_min": round(r.moving_min, 1), "above_min": round(r.above_min, 1),
+            "z2_top_bpm": z2_top, "cool_c": cool, "day_offset_bpm": round(r.day_offset_bpm, 1),
+            "moving_min": round(r.moving_min, 1), "above_min": round(r.above_min, 1),
             "road_min": round(r.road_min, 1), "heat_min": round(r.heat_min, 1), "me_min": round(r.me_min, 1),
             "road_range": [round(x, 1) for x in r.road_range], "heat_range": [round(x, 1) for x in r.heat_range],
             "me_range": [round(x, 1) for x in r.me_range],
@@ -368,6 +381,14 @@ def _review_json(r, rd, z2_top, cool) -> dict:
             "passages": [{"start_km": round(x.start_m / 1000, 2), "length_m": round(x.length_m), "mean_grade": round(x.mean_grade, 4),
                           "max_ratio": round(x.max_ratio, 2), "time_s": round(x.time_s)} for x in r.passages],
             "gear": r.gear}
+
+
+def _day_range(validation: str, model: str) -> tuple[float, float]:
+    """10 % and 90 % of how far each left-out ride's heart ran above the model (bpm)."""
+    rep = json.loads(Path(validation).read_text(encoding="utf-8"))
+    per = rep["hr"][model]["per_ride"]
+    offsets = np.array([-v["bias"] for v in per.values()])
+    return float(np.quantile(offsets, 0.1)), float(np.quantile(offsets, 0.9))
 
 
 def rider_from_env(mass_kg: float | None = None):
