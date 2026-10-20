@@ -27,7 +27,7 @@ z2analyzer = "z2analyzer.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-z2analyzer = ["py.typed", "static/*"]
+z2analyzer = ["py.typed", "static/*", "static/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
