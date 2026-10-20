@@ -203,12 +203,38 @@ def heart_table(hr_model, temps=LEARN_TEMPS, elapsed=LEARN_ELAPSED, powers=LEARN
     return HeartTable(np.asarray(temps, float), np.asarray(elapsed, float), np.asarray(powers, float), q)
 
 
-def learned_limits(models: dict, z2_top_bpm: float, notes: dict | None = None) -> Limits:
-    heart = heart_table(models["hr"])
+def domain(tabs: dict) -> dict:
+    """Where the rides say something: 1st to 99th percentile of each input the verdicts use."""
+    p = lambda a, q: float(np.percentile(a, q))  # noqa: E731
+    hx, cx, sx = tabs["hr"]["X"], tabs["cadence"]["X"], tabs["speed"]["X"]
+    return {"temp": [p(hx[:, 2], 1), p(hx[:, 2], 99)], "elapsed": [0.0, p(hx[:, 3], 99)],
+            "climb_grade": [p(cx[:, 0], 1), p(cx[:, 0], 99)], "climb_min": [0.0, p(cx[:, 1], 99)],
+            "speed_grade": [p(sx[:, 0], 1), p(sx[:, 0], 99)], "speed_power": [0.0, p(sx[:, 1], 99)]}
+
+
+def _grid(lo: float, hi: float, step: float) -> np.ndarray:
+    n = max(2, int(np.ceil((hi - lo) / step)) + 1)
+    return np.linspace(lo, hi, n)
+
+
+def learned_limits(models: dict, z2_top_bpm: float, notes: dict | None = None, dom: dict | None = None) -> Limits:
+    """The three tables, built only where the rides say something.
+
+    Outside that domain (a colder day, a steeper grade, a longer ride than any
+    ride learned from) the tables hold their edge value instead of
+    extrapolating: a line keeps falling forever, the rides do not.
+    """
+    if dom is None:
+        heart = heart_table(models["hr"])
+        cad = cadence_table(models["cadence"], LEARN_GRADES, LEARN_CLIMB)
+        spd = speed_table(models["speed"], LEARN_GRADES, LEARN_SPEED_POWERS)
+    else:
+        heart = heart_table(models["hr"], _grid(*dom["temp"], 2.0), _grid(*dom["elapsed"], 30.0), LEARN_POWERS)
+        cad = cadence_table(models["cadence"], np.round(_grid(max(0.0, dom["climb_grade"][0]), dom["climb_grade"][1], 0.01), 4),
+                            _grid(*dom["climb_min"], 5.0))
+        spd = speed_table(models["speed"], np.round(_grid(*dom["speed_grade"], 0.01), 4), _grid(*dom["speed_power"], 20.0))
     T, E = np.meshgrid(heart.temps, heart.elapsed, indexing="ij")
     c = {w: heart.ceiling(T.ravel(), E.ravel(), z2_top_bpm, w).reshape(T.shape) for w in ("low", "mid", "high")}
-    notes = dict(notes or {}, z2_top_bpm=z2_top_bpm)
-    return Limits(ceiling=Table2D(heart.temps, heart.elapsed, c["low"], c["mid"], c["high"]),
-                  cadence=cadence_table(models["cadence"], LEARN_GRADES, LEARN_CLIMB),
-                  speed=speed_table(models["speed"], LEARN_GRADES, LEARN_SPEED_POWERS),
+    notes = dict(notes or {}, z2_top_bpm=z2_top_bpm, domain=dom)
+    return Limits(ceiling=Table2D(heart.temps, heart.elapsed, c["low"], c["mid"], c["high"]), cadence=cad, speed=spd,
                   source=getattr(models["hr"], "name", "learned"), notes=notes, heart=heart)

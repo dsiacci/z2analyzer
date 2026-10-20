@@ -218,7 +218,7 @@ def cmd_validate(args) -> int:
 
 
 def cmd_learn(args) -> int:
-    from .models import ColumnsModel, ConstantModel, LinearModel, TabPFNModel, learned_limits
+    from .models import ColumnsModel, ConstantModel, LinearModel, TabPFNModel, domain, learned_limits
 
     rides, tabs = _load_tables(args.prepared, args.exclude)
     makers = {"tabpfn": lambda X, y: TabPFNModel(X, y, n_estimators=args.n_estimators), "linear": LinearModel,
@@ -247,7 +247,7 @@ def cmd_learn(args) -> int:
     if day:
         notes.update(day_offset_low_bpm=day[0], day_offset_high_bpm=day[1])
     notes["models"] = {k: getattr(m, "name", "?") for k, m in models.items()}
-    lim = learned_limits(models, args.z2_top, notes)
+    lim = learned_limits(models, args.z2_top, notes, domain(tabs))
     lim.source = "+".join(f"{k}:{v}" for k, v in notes["models"].items()) if args.models else (args.baseline or "tabpfn")
     lim.save(args.out)
     log(f"limits written to {args.out} ({lim.source}, {len(rides)} rides)")
