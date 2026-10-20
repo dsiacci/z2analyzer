@@ -81,6 +81,7 @@ left?
 ## Usage
 
 ```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu  # optional: the CPU build, a much smaller download
 pip install "z2analyzer[model] @ git+https://github.com/dsiacci/z2analyzer"
 
 # Once: terrain tiles and the bridges of your region (see Data below)
