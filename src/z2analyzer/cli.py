@@ -59,7 +59,64 @@ def main(argv=None) -> int:
     s.add_argument("--baseline", action="store_true", help="linear regression and constants instead of TabPFN")
     s.add_argument("--n-estimators", type=int, default=4)
 
+    s = sub.add_parser("profile", help="rebuild a route's profile from the terrain (GPX in, .npz out)")
+    s.add_argument("route")
+    s.add_argument("--terrain", required=True)
+    s.add_argument("--structures")
+    s.add_argument("--out", required=True)
+
+    s = sub.add_parser("plan", help="before a ride: how much of a route can stay in Zone 2")
+    s.add_argument("route", help="GPX file, or a profile from `z2analyzer profile`")
+    s.add_argument("--limits", required=True, help="limits.json from `z2analyzer learn` or `z2analyzer fixed`")
+    s.add_argument("--terrain", help="terrain tiles (needed for a GPX)")
+    s.add_argument("--structures")
+    when = s.add_mutually_exclusive_group(required=True)
+    when.add_argument("--when", help="local start time, YYYY-MM-DD HH:MM (temperature from the Météo-France forecast)")
+    when.add_argument("--temp", type=float, help="one temperature for the whole ride, °C")
+    when.add_argument("--cool", action="store_true", help="the coolest conditions of your rides")
+    when.add_argument("--hot", action="store_true", help="30 °C")
+    s.add_argument("--tz", default="Europe/Paris")
+    s.add_argument("--mass-kg", type=float)
+    s.add_argument("--watts", action="store_true", help="also print watts")
+    s.add_argument("--json", help="write the full verdict as JSON")
+    s.add_argument("--html", help="write the local page")
+
+    s = sub.add_parser("review", help="after a ride: who made the minutes above Zone 2 (road, heat, you)")
+    s.add_argument("ride", help="FIT file, or a ride from `z2analyzer prepare`")
+    s.add_argument("--limits", required=True)
+    s.add_argument("--z2-top", type=float, required=True, help="top of your Zone 2, bpm")
+    s.add_argument("--terrain", help="terrain tiles (needed for a FIT)")
+    s.add_argument("--structures")
+    s.add_argument("--cool-temp", type=float, help="reference 'cool' temperature, °C (default: from the limits)")
+    s.add_argument("--mass-kg", type=float)
+    s.add_argument("--watts", action="store_true")
+    s.add_argument("--json")
+    s.add_argument("--html")
+
+    s = sub.add_parser("fixed", help="limits from a few numbers, without any ride")
+    s.add_argument("--ceiling-cool", type=float, required=True, help="Zone 2 ceiling in the cool, W")
+    s.add_argument("--ceiling-hot", type=float, required=True, help="Zone 2 ceiling at 30 °C, W")
+    s.add_argument("--cool-temp", type=float, default=15.0)
+    s.add_argument("--cadence", type=float, default=50.0, help="lowest cadence you hold on a climb, rpm")
+    s.add_argument("--mass-kg", type=float)
+    s.add_argument("--out", required=True)
+
     args = ap.parse_args(argv)
+    if args.cmd == "profile":
+        return cmd_profile(args)
+    if args.cmd == "plan":
+        return cmd_plan(args)
+    if args.cmd == "review":
+        return cmd_review(args)
+    if args.cmd == "fixed":
+        from .limits import fixed_limits
+
+        lim = fixed_limits(rider_from_env(args.mass_kg), args.ceiling_cool, args.ceiling_hot, cool_c=args.cool_temp,
+                           cadence_rpm=args.cadence)
+        lim.notes["cool_c"] = args.cool_temp
+        lim.save(args.out)
+        log(f"limits written to {args.out}")
+        return 0
     if args.cmd == "structures":
         from .structures import fetch
 
@@ -174,6 +231,139 @@ def cmd_learn(args) -> int:
     lim.save(args.out)
     log(f"limits written to {args.out} ({lim.source}, {len(rides)} rides)")
     return 0
+
+
+def _profile_of(route: str, terrain: str | None, structures: str | None):
+    """A Profile from a .npz (already built) or a GPX (built now from the terrain tiles)."""
+    from .profile import Profile, build_profile
+
+    if route.endswith(".npz"):
+        z = np.load(route, allow_pickle=False)
+        return Profile(dist=z["dist"], lat=z["lat"], lon=z["lon"], elev=z["elev"], grade=z["grade"],
+                       on_structure=z["on_structure"]), str(z["name"])
+    if not terrain:
+        raise SystemExit("a GPX needs --terrain (folder of terrain tiles)")
+    from .dem import Terrain
+    from .gpx import read_gpx
+    from .structures import Structures
+
+    r = read_gpx(route)
+    st = Structures(structures) if structures else None
+    return build_profile(r.lat, r.lon, Terrain(terrain), st), r.name
+
+
+def cmd_profile(args) -> int:
+    prof, name = _profile_of(args.route, args.terrain, args.structures)
+    np.savez_compressed(args.out, name=name, dist=prof.dist, lat=prof.lat, lon=prof.lon, elev=prof.elev,
+                        grade=prof.grade, on_structure=prof.on_structure)
+    log(f"profile of {name}: {prof.length_m / 1000:.1f} km, written to {args.out}")
+    return 0
+
+
+def cmd_plan(args) -> int:
+    from zoneinfo import ZoneInfo
+
+    from .limits import Limits
+    from .report import plan_text, write_plan_html
+    from .verdict import constant_temp, forecast_temp, plan
+
+    rider = rider_from_env(args.mass_kg)
+    lim = Limits.load(args.limits)
+    prof, name = _profile_of(args.route, args.terrain, args.structures)
+    if args.when:
+        from .weather import get_hourly
+
+        start = datetime.strptime(args.when, "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo(args.tz)).astimezone(timezone.utc)
+        hourly = get_hourly(float(np.mean(prof.lat)), float(np.mean(prof.lon)), start.date(),
+                            (start + timedelta(hours=12)).date(), archive=False)
+        origin = start.replace(minute=0, second=0, microsecond=0)
+        temp = forecast_temp(hourly.hours_since(origin), hourly.temp_c, hourly.elevation_m,
+                             (start - origin).total_seconds() / 3600.0)
+        cond = f"{args.when} ({args.tz}), Météo-France forecast through Open-Meteo"
+    else:
+        t = args.temp if args.temp is not None else (30.0 if args.hot else float((lim.notes or {}).get("cool_c", 15.0)))
+        temp = constant_temp(t)
+        cond = f"{t:.0f} °C all along" + (" (the coolest of your rides)" if args.cool else "")
+    p = plan(prof, rider, lim, temp)
+    print(plan_text(p, name, cond, prof, watts=args.watts))
+    if args.json:
+        Path(args.json).write_text(json.dumps(_plan_json(p, name, cond, args.watts), indent=1), encoding="utf-8")
+    if args.html:
+        write_plan_html(args.html, p, name, cond, prof, watts=args.watts)
+        log(f"page written to {args.html}")
+    return 0
+
+
+def _plan_json(p, name, cond, watts: bool) -> dict:
+    def stretch(s):
+        d = {"start_km": round(s.start_m / 1000, 2), "end_km": round(s.end_m / 1000, 2), "grade": round(s.grade, 4),
+             "temp_c": round(s.temp_c, 1), "ratio": round(s.ratio, 3), "possible": s.possible,
+             "speed_kmh": round(s.speed_ms * 3.6, 1), "time_s": round(s.time_s, 1)}
+        if watts:
+            d.update(power_min_w=round(s.power_min_w), ceiling_w=round(s.ceiling_w))
+        return d
+
+    sh = p.shares
+    return {"route": name, "conditions": cond, "km_total": round(sh.km_total, 2),
+            "km_share": round(sh.km_share, 4), "time_share": round(sh.time_share, 4),
+            "km_share_range": [round(p.shares_low.km_share, 4), round(p.shares_high.km_share, 4)],
+            "time_share_range": [round(p.shares_low.time_share, 4), round(p.shares_high.time_share, 4)],
+            "passages": [{"start_km": round(x.start_m / 1000, 2), "length_m": round(x.length_m), "mean_grade": round(x.mean_grade, 4),
+                          "max_grade": round(x.max_grade, 4), "max_ratio": round(x.max_ratio, 2), "time_s": round(x.time_s)}
+                         for x in p.passages],
+            "stretches": [stretch(s) for s in p.stretches]}
+
+
+def cmd_review(args) -> int:
+    from .dataset import RideData
+    from .limits import Limits
+    from .report import review_text, write_review_html
+    from .verdict import review
+
+    rider = rider_from_env(args.mass_kg)
+    lim = Limits.load(args.limits)
+    if args.ride.endswith(".npz"):
+        rd = RideData.load(args.ride)
+    else:
+        if not args.terrain:
+            raise SystemExit("a FIT file needs --terrain (folder of terrain tiles)")
+        from .dataset import ride_data
+        from .dem import Terrain
+        from .fitfile import read_fit
+        from .structures import Structures
+        from .weather import get_hourly
+
+        ride = read_fit(args.ride)
+        if ride.is_virtual:
+            raise SystemExit("an indoor ride has no real slope")
+        ok = np.isfinite(ride.lat) & np.isfinite(ride.lon)
+        hourly = get_hourly(float(np.mean(ride.lat[ok])), float(np.mean(ride.lon[ok])), ride.start.date(),
+                            (ride.start + timedelta(seconds=float(ride.t[-1]))).date(), archive=True)
+        rd = ride_data(ride, Terrain(args.terrain), Structures(args.structures) if args.structures else None, hourly.at)
+    cool = args.cool_temp if args.cool_temp is not None else float((lim.notes or {}).get("cool_c", 15.0))
+    r = review(dist_m=rd.dist, speed_ms=rd.speed, hr=rd.hr, cadence_rpm=rd.cadence, moving=rd.moving,
+               temp_air_c=rd.temp_air, profile=rd.profile, rider=rider, limits=lim, z2_top_bpm=args.z2_top,
+               cool_temp_c=cool)
+    print(review_text(r, rd, args.z2_top, cool))
+    if args.json:
+        Path(args.json).write_text(json.dumps(_review_json(r, rd, args.z2_top, cool), indent=1), encoding="utf-8")
+    if args.html:
+        write_review_html(args.html, r, rd, args.z2_top, cool)
+        log(f"page written to {args.html}")
+    return 0
+
+
+def _review_json(r, rd, z2_top, cool) -> dict:
+    return {"ride": rd.name, "start_utc": datetime.fromtimestamp(rd.start_epoch, timezone.utc).isoformat(timespec="minutes"),
+            "z2_top_bpm": z2_top, "cool_c": cool, "moving_min": round(r.moving_min, 1), "above_min": round(r.above_min, 1),
+            "road_min": round(r.road_min, 1), "heat_min": round(r.heat_min, 1), "me_min": round(r.me_min, 1),
+            "road_range": [round(x, 1) for x in r.road_range], "heat_range": [round(x, 1) for x in r.heat_range],
+            "me_range": [round(x, 1) for x in r.me_range],
+            "km_share": round(r.shares.km_share, 4), "time_share": round(r.shares.time_share, 4),
+            "temp_air_median": round(float(np.nanmedian(rd.temp_air[rd.moving])), 1),
+            "passages": [{"start_km": round(x.start_m / 1000, 2), "length_m": round(x.length_m), "mean_grade": round(x.mean_grade, 4),
+                          "max_ratio": round(x.max_ratio, 2), "time_s": round(x.time_s)} for x in r.passages],
+            "gear": r.gear}
 
 
 def rider_from_env(mass_kg: float | None = None):
