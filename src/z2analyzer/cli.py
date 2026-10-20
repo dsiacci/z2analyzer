@@ -58,6 +58,8 @@ def main(argv=None) -> int:
     s.add_argument("--exclude", nargs="*", default=[], help="ride names to leave out (to judge them fairly)")
     s.add_argument("--baseline", choices=("linear", "fixed"),
                    help="instead of TabPFN: linear regressions on the same columns, or a fixed ceiling and cadence")
+    s.add_argument("--models", nargs="+", metavar="TABLE=MODEL",
+                   help="one model per table, e.g. hr=linear cadence=tabpfn speed=tabpfn (pick them with `validate`)")
     s.add_argument("--n-estimators", type=int, default=4)
     s.add_argument("--validation", help="validate.json: the spread of the heart's level between rides left out")
 
@@ -219,7 +221,14 @@ def cmd_learn(args) -> int:
     from .models import ColumnsModel, ConstantModel, LinearModel, TabPFNModel, learned_limits
 
     rides, tabs = _load_tables(args.prepared, args.exclude)
-    if args.baseline == "linear":
+    makers = {"tabpfn": lambda X, y: TabPFNModel(X, y, n_estimators=args.n_estimators), "linear": LinearModel,
+              "constant": ConstantModel}
+    if args.models:
+        choice = dict(m.split("=", 1) for m in args.models)
+        models = {k: makers[choice.get(k, "tabpfn")](tabs[k]["X"], tabs[k]["y"]) for k in ("hr", "cadence", "speed")}
+        for k, m in models.items():
+            m.name = choice.get(k, "tabpfn")
+    elif args.baseline == "linear":
         models = {k: LinearModel(tabs[k]["X"], tabs[k]["y"]) for k in ("hr", "cadence", "speed")}
     elif args.baseline == "fixed":
         # One ceiling for every temperature and hour (heart rate from power alone), one cadence.
@@ -229,14 +238,17 @@ def cmd_learn(args) -> int:
     else:
         models = {k: TabPFNModel(tabs[k]["X"], tabs[k]["y"], n_estimators=args.n_estimators) for k in ("hr", "cadence", "speed")}
     temp = tabs["hr"]["X"][:, 2]
-    day = _day_range(args.validation, "linear" if args.baseline == "linear" else "tabpfn") if args.validation else None
+    hr_kind = (dict(m.split("=", 1) for m in args.models).get("hr", "tabpfn") if args.models
+               else ("linear" if args.baseline in ("linear", "fixed") else "tabpfn"))
+    day = _day_range(args.validation, hr_kind) if args.validation else None
     notes = {"rides": [r.name for r in rides], "z2_top_bpm": args.z2_top,
              "temp_range_c": [float(np.percentile(temp, 2)), float(np.percentile(temp, 98))],
              "cool_c": float(np.percentile(temp, 10)), "learned": datetime.now(timezone.utc).isoformat(timespec="minutes")}
     if day:
         notes.update(day_offset_low_bpm=day[0], day_offset_high_bpm=day[1])
+    notes["models"] = {k: getattr(m, "name", "?") for k, m in models.items()}
     lim = learned_limits(models, args.z2_top, notes)
-    lim.source = args.baseline or "tabpfn"
+    lim.source = "+".join(f"{k}:{v}" for k, v in notes["models"].items()) if args.models else (args.baseline or "tabpfn")
     lim.save(args.out)
     log(f"limits written to {args.out} ({lim.source}, {len(rides)} rides)")
     return 0

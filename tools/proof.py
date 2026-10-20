@@ -30,7 +30,14 @@ from z2analyzer.dataset import RideData  # noqa: E402
 from z2analyzer.limits import Limits  # noqa: E402
 from z2analyzer.verdict import review  # noqa: E402
 
-KINDS = ("tabpfn", "linear", "fixed")
+KINDS = ("chosen", "tabpfn", "linear", "fixed")
+
+
+def learn_args(kind: str, chosen: list[str], validation: str | None) -> list[str]:
+    """`z2analyzer learn` options for each kind of limits."""
+    extra = {"tabpfn": [], "linear": ["--baseline", "linear"], "fixed": ["--baseline", "fixed"],
+             "chosen": ["--models", *chosen]}[kind]
+    return extra + (["--validation", validation] if validation else [])
 
 
 def cmd_learn(a) -> int:
@@ -38,7 +45,7 @@ def cmd_learn(a) -> int:
     out.mkdir(parents=True, exist_ok=True)
     names = sorted(p.stem for p in Path(a.prepared).glob("*.npz"))
     for kind in a.kinds:
-        extra = [] if kind == "tabpfn" else ["--baseline", kind]
+        extra = learn_args(kind, a.chosen, a.validation)
         target = out / f"all.{kind}.json"
         if not target.exists():
             cli.main(["learn", a.prepared, "--z2-top", str(a.z2_top), "--out", str(target), *extra])
@@ -84,20 +91,20 @@ def cmd_judge(a) -> int:
 
 
 def table(res: dict) -> str:
-    lines = ["| ride | air | moving | above Z2 | road | heat | me | Z2 possible (km / time) | smallest gear where impossible |",
-             "|---|---|---|---|---|---|---|---|---|"]
+    lines = ["| ride | air | heart vs usual | moving | above Z2 | road | heat | me | Z2 possible (km / time) | smallest gear where impossible |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
     tot = {k: 0.0 for k in ("moving", "above", "road", "heat", "me")}
     for name, row in sorted(res["rides"].items(), key=lambda kv: kv[1]["date"]):
-        t = row.get("tabpfn")
+        t = row.get("chosen") or row.get("tabpfn")
         if not t:
             continue
         for k in tot:
             tot[k] += t[f"{k}_min"]
         g = t["gear"].get("impossible_smallest_gear_share", float("nan"))
-        lines.append(f"| {row['date']} | {row['temp_air_median']:.0f} °C | {t['moving_min']:.0f} min | {t['above_min']:.0f} | "
+        lines.append(f"| {row['date']} | {row['temp_air_median']:.0f} °C | {t.get('day_offset_bpm', 0):+.0f} bpm | {t['moving_min']:.0f} min | {t['above_min']:.0f} | "
                      f"{t['road_min']:.0f} | {t['heat_min']:.0f} | {t['me_min']:.0f} | "
                      f"{100 * t['km_share']:.0f} % / {100 * t['time_share']:.0f} % | {100 * g:.0f} % |")
-    lines.append(f"| all | | {tot['moving']:.0f} min | {tot['above']:.0f} | {tot['road']:.0f} | {tot['heat']:.0f} | {tot['me']:.0f} | | |")
+    lines.append(f"| all | | | {tot['moving']:.0f} min | {tot['above']:.0f} | {tot['road']:.0f} | {tot['heat']:.0f} | {tot['me']:.0f} | | |")
     lines.append("")
     lines.append("| limits | road | heat | me |")
     lines.append("|---|---|---|---|")
@@ -115,6 +122,9 @@ def main() -> int:
     s.add_argument("out")
     s.add_argument("--z2-top", type=float, required=True)
     s.add_argument("--kinds", nargs="+", default=list(KINDS))
+    s.add_argument("--chosen", nargs="+", default=["hr=linear", "cadence=linear", "speed=tabpfn"],
+                   help="the model of each table for the 'chosen' limits (the winners of the validation)")
+    s.add_argument("--validation", help="validate.json, for the spread of the heart's level between days")
     s = sub.add_parser("judge")
     s.add_argument("prepared")
     s.add_argument("out")
