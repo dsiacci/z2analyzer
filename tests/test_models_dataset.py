@@ -96,14 +96,14 @@ def test_ride_data_save_load_keeps_no_positions(tmp_path):
 
 def test_structures_follow_the_bridge_not_the_road_below(tmp_path):
     # A bridge heading north; one track runs over it, another passes under it heading east.
-    bridge = [[41.95, 8.80], [41.9509, 8.80]]
-    (tmp_path / "s.json").write_text(json.dumps({"bbox": [41.9, 8.7, 42.0, 8.9], "ways": [{"kind": "bridge", "highway": "primary", "coords": bridge}]}))
+    bridge = [[42.30, 9.15], [42.3009, 9.15]]
+    (tmp_path / "s.json").write_text(json.dumps({"bbox": [42.25, 9.05, 42.35, 9.25], "ways": [{"kind": "bridge", "highway": "primary", "coords": bridge}]}))
     s = Structures(tmp_path / "s.json")
-    over_lat = np.linspace(41.9495, 41.9515, 21)
-    over = s(over_lat, np.full(21, 8.80))
-    assert over[(over_lat > 41.9501) & (over_lat < 41.9508)].all() and not over[0] and not over[-1]
-    under_lon = np.linspace(8.799, 8.801, 21)
-    assert not s(np.full(21, 41.9504), under_lon).any()
+    over_lat = np.linspace(42.2995, 42.3015, 21)
+    over = s(over_lat, np.full(21, 9.15))
+    assert over[(over_lat > 42.3001) & (over_lat < 42.3008)].all() and not over[0] and not over[-1]
+    under_lon = np.linspace(9.149, 9.151, 21)
+    assert not s(np.full(21, 42.3004), under_lon).any()
 
 
 def test_heart_table_inverts_to_the_same_ceiling_and_follows_the_day_level():

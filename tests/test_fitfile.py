@@ -14,7 +14,7 @@ def samples(n=120, skip=()):
     for i in range(n):
         if i in skip:
             continue
-        out.append({"t": i, "lat": 41.95 + i * 1e-5, "lon": 8.80, "hr": 120 + i // 10, "cadence": 60,
+        out.append({"t": i, "lat": 42.30 + i * 1e-5, "lon": 9.15, "hr": 120 + i // 10, "cadence": 60,
                     "dist": i * 5.0, "power": 150, "temp": 21, "speed": 5.0, "alt": 100.0 + i * 0.2})
     return out
 
@@ -25,7 +25,7 @@ def test_read_fit_round_trip(tmp_path):
     r = read_fit(p)
     assert r.start == START
     assert r.t.size == 120 and r.has_power and not r.is_virtual
-    assert r.lat[0] == pytest.approx(41.95, abs=1e-6) and r.lon[5] == pytest.approx(8.80, abs=1e-6)
+    assert r.lat[0] == pytest.approx(42.30, abs=1e-6) and r.lon[5] == pytest.approx(9.15, abs=1e-6)
     assert r.hr[59] == 125 and r.cadence[0] == 60 and r.power[10] == 150
     assert r.speed[3] == pytest.approx(5.0) and r.dist[10] == pytest.approx(50.0)
     assert r.alt[10] == pytest.approx(102.0, abs=0.21) and r.temp[0] == 21

@@ -6,7 +6,7 @@ from z2analyzer.geo import cumulative_m, lambert93
 from z2analyzer.profile import bridge_over, build_profile, local_grade, segments, smooth
 
 
-def straight_north(n=401, lat0=41.95, lon0=8.80, step_deg=0.0001):
+def straight_north(n=401, lat0=42.30, lon0=9.15, step_deg=0.0001):
     """A track heading north, about 11 m between points."""
     return lat0 + np.arange(n) * step_deg, np.full(n, lon0)
 
@@ -61,7 +61,7 @@ def write_tile(path, x_ll, y_ll, ncols, nrows, cell, fn, corner=True):
 
 
 def test_terrain_is_bilinear_and_exact_on_a_plane(tmp_path):
-    lat, lon = 41.95, 8.80
+    lat, lon = 42.30, 9.15
     x, y = lambert93(lat, lon)
     x_ll, y_ll = float(np.floor(x / 1000) * 1000 - 500), float(np.floor(y / 1000) * 1000 - 500)
 

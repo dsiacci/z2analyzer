@@ -10,7 +10,7 @@ from test_profile_dem import write_tile
 from z2analyzer import cli
 from z2analyzer.geo import cumulative_m, lambert93
 
-LAT0, LON0 = 41.95, 8.80
+LAT0, LON0 = 42.30, 9.15
 
 
 def terrain(tmp_path):

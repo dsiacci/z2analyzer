@@ -14,8 +14,8 @@ def route(flat1=2000.0, climb=2000.0, flat2=1000.0, grade=0.10):
     """North-bound route: flat, a steady climb, flat again (one point every ~5.6 m)."""
     total = flat1 + climb + flat2
     n = int(total / 5.56) + 1
-    lat = 41.95 + np.arange(n) * 0.00005
-    lon = np.full(n, 8.80)
+    lat = 42.30 + np.arange(n) * 0.00005
+    lon = np.full(n, 9.15)
     d = cumulative_m(lat, lon)
     d = d * (total / d[-1])
 

@@ -5,18 +5,18 @@ from z2analyzer import geo
 
 
 def test_haversine_one_degree_of_latitude():
-    assert geo.haversine_m(42.0, 9.0, 43.0, 9.0) == pytest.approx(111_195, rel=1e-3)
+    assert geo.haversine_m(45.0, 5.0, 46.0, 5.0) == pytest.approx(111_195, rel=1e-3)
 
 
 def test_cumulative_and_resample():
-    lat = np.array([42.0, 42.001, 42.002])
-    lon = np.array([9.0, 9.0, 9.0])
+    lat = np.array([45.0, 45.001, 45.002])
+    lon = np.array([5.0, 5.0, 5.0])
     d = geo.cumulative_m(lat, lon)
     assert d[0] == 0 and d[-1] == pytest.approx(222.4, rel=1e-3)
     grid, v = geo.resample(d, {"lat": lat}, 10.0)
     assert np.allclose(np.diff(grid)[:-1], 10.0)
     assert grid[-1] == pytest.approx(d[-1])
-    assert v["lat"][0] == 42.0 and v["lat"][-1] == pytest.approx(42.002)
+    assert v["lat"][0] == 45.0 and v["lat"][-1] == pytest.approx(45.002)
 
 
 def test_resample_ignores_repeated_points():
@@ -41,8 +41,8 @@ def test_lambert93_constants_match_ign():
 def test_lambert93_origin_and_round_trip():
     x, y = geo.lambert93(46.5, 3.0)
     assert x == pytest.approx(700000.0, abs=1e-6) and y == pytest.approx(6600000.0, abs=1e-6)
-    lat = np.array([41.4, 41.92, 42.7, 43.0])
-    lon = np.array([9.2, 8.74, 9.45, 9.35])
+    lat = np.array([41.39, 42.30, 42.70, 43.00])
+    lon = np.array([9.16, 9.15, 9.45, 9.35])
     x, y = geo.lambert93(lat, lon)
     lat2, lon2 = geo.lambert93_inverse(x, y)
     assert np.allclose(lat, lat2, atol=1e-9) and np.allclose(lon, lon2, atol=1e-9)
