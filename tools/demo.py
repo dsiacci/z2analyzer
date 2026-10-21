@@ -1,16 +1,18 @@
-"""Record the demo video from z2analyzer's own pages.
+"""Record the demo video from the web app's own pages.
 
-    python tools/demo.py --plan plan.html --review review.html --plan-text plan.txt --review-text review.txt \
-        --out demo/ [--voice voice/] [--tempo 1.05]
+    python tools/demo.py --app pages/ --out demo/ [--voice voice/] [--tempo 1.05]
 
-Each shot is one of the tool's pages (plan, review), a terminal (the command
-as typed and what the tool printed when it wrote that page: `--plan-text`,
-`--review-text`) or a title card, photographed at 1920×1080 by a headless
-Chromium with the scene's highlight drawn in. ffmpeg turns the shots into a
-video with a slow zoom and crossfades, each scene paced on its voice-over
-clip (voice/<scene>.mp3) when there is one. Writes z2analyzer-demo.mp4 and
-z2analyzer-demo.srt (captions). Needs chromium (or google-chrome), ffmpeg and
-ffprobe.
+`--app` holds the app's pages as the video shows them, saved with the
+functions of `z2analyzer.web` from a real store: home-before.html (the list
+before the new analyses), new-review.html and new-plan.html (a form, its file
+chosen), progress-review.html and progress-plan.html (an analysis running),
+review.html and plan.html (the results), home-after.html (the list at the
+end). Each shot is one of those pages or a title card, photographed at
+1920×1080 by a headless Chromium with the scene's highlight drawn in. ffmpeg
+turns the shots into a video with a slow zoom and crossfades, each scene
+paced on its voice-over clip (voice/<scene>.mp3) when there is one. Writes
+z2analyzer-demo.mp4 and z2analyzer-demo.srt (captions). Needs chromium (or
+google-chrome), ffmpeg and ffprobe.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -28,7 +31,7 @@ HERE = Path(__file__).resolve().parent
 W, H, FPS, FADE, LEAD = 1920, 1080, 30, 0.5, 0.35
 
 sys.path.insert(0, str(HERE.parent / "src"))
-from z2analyzer.page import CSS, HEAT, ME, NO, OK, fonts_css  # noqa: E402
+from z2analyzer.page import CSS, fonts_css  # noqa: E402
 
 CARD_CSS = """
 html, body { height:100%; } body { display:grid; place-items:center; background:var(--paper); }
@@ -50,20 +53,11 @@ html, body { height:100%; } body { display:grid; place-items:center; background:
 .board td:last-child { border-right:1px solid var(--line); border-radius:0 16px 16px 0; }
 .board td.win { color:var(--ok); font:800 44px/1 var(--display); } .board td.lose { color:var(--muted); font:600 40px/1 var(--display); }
 .board p { font:500 22px/1.4 var(--ui); color:var(--muted); margin:16px 0 0; }
-.board .split { height:150px; border-radius:20px; } .board .split div { min-width:150px; } .board .split b { font-size:76px; }
-.board .split span { font-size:20px; white-space:nowrap; }
-.term { width:1180px; } .term h1 { font:800 50px/1 var(--display); text-transform:uppercase; margin:0; }
-.term .sub { font:500 21px/1.3 var(--ui); color:var(--muted); margin:6px 0 18px; }
-.term .win { background:#0c1230; border-radius:16px; overflow:hidden; box-shadow:0 18px 50px rgba(12,18,48,.25); }
-.term .bar { display:flex; gap:9px; padding:13px 18px; background:#1b2350; } .term .bar i { width:12px; height:12px; border-radius:50%; background:#3d4678; }
-.term pre { margin:0; padding:18px 26px 22px; white-space:pre-wrap; color:#8f99c2;
-  font:500 13.5px/1.5 "DejaVu Sans Mono", "Liberation Mono", Menlo, Consolas, monospace; }
-.term .cmd { color:#fff; } .term .hi { color:#fff; font-size:19px; font-weight:700; }
 """
 
 
-def run(cmd: list[str]) -> str:
-    r = subprocess.run(cmd, capture_output=True, text=True)
+def run(cmd: list[str], env: dict | None = None) -> str:
+    r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     if r.returncode != 0:
         raise RuntimeError(f"{cmd[0]} failed: {r.stderr[-1500:]}")
     return r.stdout
@@ -77,9 +71,10 @@ def browser() -> str:
 
 
 def shoot(html_file: Path, png: Path) -> None:
-    """1280×720 CSS pixels at a scale of 1.5: a 1920×1080 picture with sharp text."""
-    run([browser(), "--headless=new", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-         "--force-device-scale-factor=1.5", "--window-size=1280,720", f"--screenshot={png}", html_file.resolve().as_uri()])
+    """1280×720 CSS pixels at a scale of 1.5: a 1920×1080 picture with sharp text (dates written day first)."""
+    run([browser(), "--headless=new", "--no-sandbox", "--disable-gpu", "--hide-scrollbars", "--lang=en-GB",
+         "--force-device-scale-factor=1.5", "--window-size=1280,720", f"--screenshot={png}", html_file.resolve().as_uri()],
+        env=dict(os.environ, LANG="en_GB.UTF-8", LANGUAGE="en_GB"))
 
 
 def card(kind: str, spec: dict, skyline_svg: str) -> str:
@@ -90,32 +85,11 @@ def card(kind: str, spec: dict, skyline_svg: str) -> str:
     elif kind == "outro":
         lines = "".join(f"<div>{e(x)}</div>" for x in spec["lines"])
         body = f'<div class="dawn">{skyline_svg}<div class="centre"><div class="brand">{e(spec["brand"])}</div><div class="credits">{lines}</div></div></div>'
-    elif kind == "proof":
+    else:  # proof
         rows = "".join(f'<tr><td>{e(r[0])}</td><td class="{"win" if r[3] == "tabpfn" else "lose"}">{e(r[1])}</td>'
                        f'<td class="{"win" if r[3] == "line" else "lose"}">{e(r[2])}</td></tr>' for r in spec["rows"])
         body = (f'<div class="board"><h1>{e(spec["title"])}</h1><table><tr><th></th><th>TabPFN v2</th><th>Straight line</th></tr>{rows}</table>'
                 f'<p>{e(spec["note"])}</p></div>')
-    else:  # total
-        parts = ((spec["road"], NO, "the road"), (spec["heat"], HEAT, "the heat"), (spec["me"], ME, "me"))
-        split = "".join(f'<div style="flex:{v};background:{c}"><b>{v}</b><span>{lab}</span></div>' for v, c, lab in parts)
-        body = (f'<div class="board"><h1>{e(spec["title"])}</h1><div class="split">{split}</div>'
-                f'<p>Each minute above Zone 2 goes to one cause: the road, the heat, or me.</p></div>')
-    return doc(body)
-
-
-def terminal(spec: dict, printed: str) -> str:
-    """The command as typed, then what the tool printed, its two-line verdict lit."""
-    e = html.escape
-    cmd = "\n".join(f'<span class="cmd">{"$ " if k == 0 else "      "}{e(c)}</span>' for k, c in enumerate(spec["command"]))
-    out, lit = [], 0
-    for line in printed.rstrip("\n").splitlines():
-        if line and not line.startswith("page written") and lit < 2:  # the verdict comes first, in two lines
-            out.append(f'<span class="hi">{e(line)}</span>')
-            lit += 1
-        else:
-            out.append(e(line))
-    body = (f'<div class="term"><h1>{e(spec["title"])}</h1><p class="sub">{e(spec["sub"])}</p>'
-            f'<div class="win"><div class="bar"><i></i><i></i><i></i></div><pre>{cmd}\n' + "\n".join(out) + "</pre></div></div>")
     return doc(body)
 
 
@@ -130,19 +104,31 @@ def skyline_of(page_html: str) -> str:
     return m.group(1) if m else ""
 
 
-def page_variant(src: Path, view: str, row: str | None) -> str:
-    """The tool's own page, with the scene's part on screen and its highlight drawn in."""
-    s = src.read_text(encoding="utf-8")
+def page_variant(src: Path, view: str | None, row: str | None) -> str:
+    """The app's own page, with the scene's part on screen and its highlight drawn in."""
+    s = re.sub(r'<meta http-equiv="refresh"[^>]*>', "", src.read_text(encoding="utf-8"))
     css = {
+        None: "",
+        # The list of earlier analyses, the newest one found in the watched folder.
+        "start": ".hero.home { height:350px; } .total { display:none !important; } main { margin-top:14px !important; }"
+                 " .list .tile:first-child { box-shadow:0 0 0 4px var(--paper), 0 0 0 8px var(--ok); }",
+        # A form with its file chosen, and the button that sends it.
+        "drop": ".hero.short .sub { display:none; } .hero.short { min-height:0; padding-bottom:70px; } main { zoom:.8; }"
+                " .drop.has { box-shadow:0 0 0 4px var(--card), 0 0 0 9px var(--ok); }"
+                " form:has(.drop.has) .btn.big { box-shadow:0 0 0 4px var(--card), 0 0 0 8px var(--ink); }",
         # The headline numbers (plan) or the split of the minutes (review), ringed.
         "top": ".metric { border-radius:14px; padding:10px 12px; background:color-mix(in srgb, var(--ok) 9%, var(--card));"
                " box-shadow:0 0 0 3px var(--ok); } .split { box-shadow:0 0 0 5px var(--card), 0 0 0 9px var(--ink); }",
         # The roadbook and the cards of the passages, one of them lit up.
-        "passage": ".hero, section.score, .shape, footer { display:none !important; } main { margin-top:22px; max-width:1240px; zoom:.8; }"
+        "passage": ".appbar, .hero, section.score, .shape, .about, footer { display:none !important; }"
+                   " main { margin-top:22px; max-width:1240px; zoom:.8; }"
                    " .climb.hl { background:color-mix(in srgb, var(--no) 14%, var(--card)); box-shadow:0 0 0 3px var(--no); }",
         # The heart rate alone, the minutes above Zone 2 coloured by cause.
-        "heart": ".hero, main > section:not(:nth-of-type(2)), footer { display:none !important; }"
+        "heart": ".appbar, .hero, main > section:not(:nth-of-type(2)), footer { display:none !important; }"
                  " main { margin-top:40px; max-width:1180px; } .chart { height:420px !important; }",
+        # Every analysis kept, and what the rides add up to.
+        "total": ".hero.home { height:300px; } .hero .sub, .hero .btn.big { display:none; }"
+                 " .total { box-shadow:0 0 0 4px var(--paper), 0 0 0 9px var(--ink); }",
     }[view]
     if row:
         s = re.sub(r'<li class="climb">(<div class="n">\d+</div><div><div class="where">)' + re.escape(row),
@@ -161,10 +147,7 @@ def srt_time(t: float) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--plan", required=True, help="page written by `z2analyzer plan --html`")
-    ap.add_argument("--review", required=True, help="page written by `z2analyzer review --html`")
-    ap.add_argument("--plan-text", help="what `z2analyzer plan` printed when it wrote that page")
-    ap.add_argument("--review-text", help="what `z2analyzer review` printed when it wrote that page")
+    ap.add_argument("--app", required=True, help="folder of the app's pages (see above)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--voice", help="folder of <scene>.mp3 voice-over clips")
     ap.add_argument("--tempo", type=float, default=1.0, help="play the voice this much faster")
@@ -173,22 +156,18 @@ def main() -> int:
     out = Path(a.out)
     shots = out / "shots"
     shots.mkdir(parents=True, exist_ok=True)
-    pages = {"plan": Path(a.plan), "review": Path(a.review)}
-    texts = {"plan": a.plan_text, "review": a.review_text}
+    app = Path(a.app)
     voice = Path(a.voice) if a.voice else None
 
     plan_ = []
     for sc in conf["scenes"]:
-        kind, view = sc["shot"].split(":")
+        kind, name, *view = sc["shot"].split(":")
         page = shots / f"{sc['id']}.html"
         if kind == "card":
-            page.write_text(card(view, conf["cards"][view], skyline_of(pages["plan"].read_text(encoding="utf-8"))), encoding="utf-8")
-        elif kind == "term":
-            if not texts[view]:
-                raise SystemExit(f"scene {sc['id']} needs --{view}-text")
-            page.write_text(terminal(conf["terms"][view], Path(texts[view]).read_text(encoding="utf-8")), encoding="utf-8")
+            page.write_text(card(name, conf["cards"][name], skyline_of((app / "plan.html").read_text(encoding="utf-8"))),
+                            encoding="utf-8")
         else:
-            page.write_text(page_variant(pages[kind], view, sc.get("row")), encoding="utf-8")
+            page.write_text(page_variant(app / f"{name}.html", view[0] if view else None, sc.get("row")), encoding="utf-8")
         png = shots / f"{sc['id']}.png"
         shoot(page, png)
         clip = voice / f"{sc['id']}.mp3" if voice and (voice / f"{sc['id']}.mp3").exists() else None

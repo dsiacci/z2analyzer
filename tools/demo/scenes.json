@@ -7,41 +7,59 @@
    "say": "My AI coach says my Zone 2 rides turn into tempo. Is it me, or the mountain?"
   },
   {
-   "id": "term-plan",
-   "shot": "term:plan",
+   "id": "home",
+   "shot": "app:home-before:start",
    "min": 6.0,
-   "say": "Before a ride, I give it a route and a start time. It answers in two lines."
+   "say": "z2analyzer is a small web app on my own machine. Each new ride in my rides folder is judged on its own."
   },
   {
-   "id": "plan",
-   "shot": "plan:top",
-   "min": 6.0,
-   "say": "On this loop, Zone 2 is possible on 89 percent of the kilometres, but only 70 percent of the time."
+   "id": "new-review",
+   "shot": "app:new-review:drop",
+   "min": 5.0,
+   "say": "Or I start a new analysis and drop the FIT file from my bike computer."
   },
   {
-   "id": "passage",
-   "shot": "plan:passage",
-   "min": 7.0,
-   "row": "km 47.8",
-   "say": "On this climb, even in my easiest gear, at the slowest cadence I can hold, the slope asks for 1.7 times my Zone 2 ceiling."
-  },
-  {
-   "id": "term-review",
-   "shot": "term:review",
-   "min": 6.0,
-   "say": "After the ride, I give it the FIT file from my bike computer."
+   "id": "progress-review",
+   "shot": "app:progress-review",
+   "min": 3.0,
+   "say": ""
   },
   {
    "id": "review",
-   "shot": "review:top",
+   "shot": "app:review:top",
    "min": 6.0,
    "say": "119 minutes above Zone 2. 45 imposed by the road, 5 by the heat, 70 mine."
   },
   {
    "id": "heart",
-   "shot": "review:heart",
+   "shot": "app:review:heart",
    "min": 5.0,
    "say": ""
+  },
+  {
+   "id": "new-plan",
+   "shot": "app:new-plan:drop",
+   "min": 5.0,
+   "say": "Before the next ride, I drop the route and choose a start time."
+  },
+  {
+   "id": "progress-plan",
+   "shot": "app:progress-plan",
+   "min": 3.0,
+   "say": ""
+  },
+  {
+   "id": "plan",
+   "shot": "app:plan:top",
+   "min": 6.0,
+   "say": "On this loop, Zone 2 is possible on 89 percent of the kilometres, but only 70 percent of the time."
+  },
+  {
+   "id": "passage",
+   "shot": "app:plan:passage",
+   "min": 7.0,
+   "row": "km 47.8",
+   "say": "On this climb, even in my easiest gear, at the slowest cadence I can hold, the slope asks for 1.7 times my Zone 2 ceiling."
   },
   {
    "id": "proof",
@@ -51,9 +69,9 @@
   },
   {
    "id": "total",
-   "shot": "card:total",
+   "shot": "app:home-after:total",
    "min": 6.0,
-   "say": "Over ten rides, the road made 98 minutes. I made 522. My coach was right."
+   "say": "Every analysis stays in the list. Over ten rides, the road made 98 minutes. I made 522. My AI coach was right."
   },
   {
    "id": "outro",
@@ -92,12 +110,6 @@
    ],
    "note": "Physics for the slope · TabPFN v2 on the CPU for the speed · a straight line where it won"
   },
-  "total": {
-   "title": "Ten rides, 637 minutes above Zone 2",
-   "road": 98,
-   "heat": 17,
-   "me": 522
-  },
   "outro": {
    "brand": "z2analyzer",
    "lines": [
@@ -106,24 +118,6 @@
     "Terrain: IGN RGE ALTI · Bridges: © OpenStreetMap contributors",
     "Weather: Open-Meteo, Météo-France models",
     "Voice: ElevenLabs"
-   ]
-  }
- },
- "terms": {
-  "plan": {
-   "title": "Before a ride",
-   "sub": "A route and a start time",
-   "command": [
-    "z2analyzer plan canareccia.gpx --when \"2026-10-24 08:30\" --name \"The Canareccia loop\" \\",
-    "--limits limits.json --terrain dem/ --structures bridges.json --html canareccia.html"
-   ]
-  },
-  "review": {
-   "title": "After the ride",
-   "sub": "The FIT file from the bike computer",
-   "command": [
-    "z2analyzer review 2026-10-04.fit --z2-top 145 --html 2026-10-04.html \\",
-    "--limits limits.json --terrain dem/ --structures bridges.json"
    ]
   }
  }
