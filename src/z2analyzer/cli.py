@@ -1,5 +1,6 @@
 """Command line: prepare your rides, learn your limits, then judge a route or a ride.
 
+    z2analyzer serve --limits limits.json --terrain dem/ --structures bridges.json --z2-top 145   # the web app
     z2analyzer structures --bbox 41.3 8.5 43.1 9.6 --out bridges.json
     z2analyzer prepare rides/*.fit --terrain dem/ --structures bridges.json --out prepared/
     z2analyzer validate prepared/ --out validate.json
@@ -35,6 +36,20 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="z2analyzer", description="How much of a ride can really stay in Zone 2?")
     ap.add_argument("--version", action="version", version=__version__)
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("serve", help="the web app: a new analysis in your browser, and every earlier one")
+    s.add_argument("--limits", required=True, help="limits.json from `z2analyzer learn` or `z2analyzer fixed`")
+    s.add_argument("--terrain", required=True, help="folder of terrain tiles (IGN RGE ALTI .asc)")
+    s.add_argument("--structures", help="bridges and tunnels file from `z2analyzer structures`")
+    s.add_argument("--z2-top", type=float, help="top of your Zone 2, bpm (default: the one the limits were learned with)")
+    s.add_argument("--data", default="z2analyzer-data", help="where the analyses are kept (default: ./z2analyzer-data)")
+    s.add_argument("--host", default="127.0.0.1", help="address to listen on (default: this machine only)")
+    s.add_argument("--port", type=int, default=8765)
+    s.add_argument("--tz", default="Europe/Paris")
+    s.add_argument("--edge-temp", action="store_true", help="use the computer's sensor instead of Open-Meteo after a ride")
+    s.add_argument("--watch", metavar="FOLDER", help="where your FIT files land: each new ride is judged on its own")
+    s.add_argument("--every", type=float, default=5.0, help="minutes between two looks at that folder (default: 5)")
+    s.add_argument("--mass-kg", type=float)
 
     s = sub.add_parser("structures", help="download the road bridges and tunnels of a region (OpenStreetMap)")
     s.add_argument("--bbox", nargs=4, type=float, metavar=("SOUTH", "WEST", "NORTH", "EAST"), required=True)
@@ -119,6 +134,10 @@ def main(argv=None) -> int:
     s.add_argument("--out", required=True)
 
     args = ap.parse_args(argv)
+    if args.cmd == "serve":
+        from .web import serve
+
+        return serve(args)
     if args.cmd == "profile":
         return cmd_profile(args)
     if args.cmd == "plan":
@@ -305,34 +324,15 @@ def cmd_profile(args) -> int:
 
 
 def cmd_plan(args) -> int:
-    from zoneinfo import ZoneInfo
-
     from .limits import Limits
     from .report import plan_text, write_plan_html
-    from .verdict import constant_temp, forecast_temp, plan
+    from .verdict import plan
 
     rider = rider_from_env(args.mass_kg)
     lim = Limits.load(args.limits)
     prof, name = _profile_of(args.route, args.terrain, args.structures)
     name = args.name or name
-    if args.when:
-        from .weather import get_hourly
-
-        start = datetime.strptime(args.when, "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo(args.tz)).astimezone(timezone.utc)
-        hourly = get_hourly(float(np.mean(prof.lat)), float(np.mean(prof.lon)), start.date(),
-                            (start + timedelta(hours=12)).date(), archive=False)
-        origin = start.replace(minute=0, second=0, microsecond=0)
-        temp = forecast_temp(hourly.hours_since(origin), hourly.temp_c, hourly.elevation_m,
-                             (start - origin).total_seconds() / 3600.0)
-        t0 = float(temp(np.array([0.0]), np.array([prof.elev[0]]))[0])
-        cond = f"Start {args.when} ({args.tz}), {t0:.0f} °C forecast at the start (Météo-France, through Open-Meteo)"
-        low = ((lim.notes or {}).get("domain") or {}).get("temp", [None])[0]
-        if low is not None and t0 < low:
-            cond += f"; your rides start at {low:.0f} °C, so colder hours count as {low:.0f} °C"
-    else:
-        t = args.temp if args.temp is not None else (30.0 if args.hot else float((lim.notes or {}).get("cool_c", 15.0)))
-        temp = constant_temp(t)
-        cond = f"{t:.0f} °C all along" + (" (the coolest of your rides)" if args.cool else "")
+    temp, cond = plan_conditions(prof, lim, args.when, args.tz, args.temp, args.cool, args.hot)
     p = plan(prof, rider, lim, temp, top_bpm=args.z2_top)
     print(plan_text(p, name, cond, prof, watts=args.watts))
     if args.json:
@@ -341,6 +341,37 @@ def cmd_plan(args) -> int:
         write_plan_html(args.html, p, name, cond, prof, watts=args.watts)
         log(f"page written to {args.html}")
     return 0
+
+
+def plan_conditions(prof, lim, when: str | None = None, tz: str = "Europe/Paris", temp: float | None = None,
+                    cool: bool = False, hot: bool = False):
+    """The temperature along a route, and the sentence that says where it comes from.
+
+    `when` (local time, YYYY-MM-DD HH:MM) takes the Météo-France forecast for
+    that start; otherwise one temperature: `temp`, 30 °C if `hot`, or the
+    coolest of the rides the limits were learned from.
+    """
+    from .verdict import constant_temp, forecast_temp
+
+    if when:
+        from zoneinfo import ZoneInfo
+
+        from .weather import get_hourly
+
+        start = datetime.strptime(when, "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo(tz)).astimezone(timezone.utc)
+        hourly = get_hourly(float(np.mean(prof.lat)), float(np.mean(prof.lon)), start.date(),
+                            (start + timedelta(hours=12)).date(), archive=False)
+        origin = start.replace(minute=0, second=0, microsecond=0)
+        fn = forecast_temp(hourly.hours_since(origin), hourly.temp_c, hourly.elevation_m,
+                           (start - origin).total_seconds() / 3600.0)
+        t0 = float(fn(np.array([0.0]), np.array([prof.elev[0]]))[0])
+        cond = f"Start {when} ({tz}), {t0:.0f} °C forecast at the start (Météo-France, through Open-Meteo)"
+        low = ((lim.notes or {}).get("domain") or {}).get("temp", [None])[0]
+        if low is not None and t0 < low:
+            cond += f"; your rides start at {low:.0f} °C, so colder hours count as {low:.0f} °C"
+        return fn, cond
+    t = temp if temp is not None else (30.0 if hot else float((lim.notes or {}).get("cool_c", 15.0)))
+    return constant_temp(t), f"{t:.0f} °C all along" + (" (the coolest of your rides)" if cool else "")
 
 
 def _plan_json(p, name, cond, watts: bool) -> dict:
@@ -405,23 +436,31 @@ def ride_from_fit(path, terrain, structures=None, edge_temp: bool = False):
     from .dataset import ride_data
     from .fitfile import read_fit
 
-    ride = read_fit(path)
+    ride = outdoor_ride(read_fit(path))
+    return ride_data(ride, terrain, structures, None if edge_temp else ride_weather(ride))
+
+
+def outdoor_ride(ride):
+    """The ride itself; a ValueError for an indoor ride or a ride without power."""
     if ride.is_virtual:
         raise ValueError(f"{ride.name}: an indoor ride has no real slope")
     if not ride.has_power:
         raise ValueError(f"{ride.name}: no power in this file")
-    temp_fn = None
-    if not edge_temp:
-        from .weather import get_hourly
+    return ride
 
-        ok = np.isfinite(ride.lat) & np.isfinite(ride.lon)
-        try:
-            hourly = get_hourly(float(np.mean(ride.lat[ok])), float(np.mean(ride.lon[ok])), ride.start.date(),
-                                (ride.start + timedelta(seconds=float(ride.t[-1]))).date(), archive=True)
-            temp_fn = hourly.at
-        except OSError as e:  # no network: the computer's sensor will do
-            log(f"{ride.name}: no weather archive ({e}); using the computer's temperature sensor")
-    return ride_data(ride, terrain, structures, temp_fn)
+
+def ride_weather(ride):
+    """The air temperature along a ride from the Météo-France archive; None without a network."""
+    from .weather import get_hourly
+
+    ok = np.isfinite(ride.lat) & np.isfinite(ride.lon)
+    try:
+        hourly = get_hourly(float(np.mean(ride.lat[ok])), float(np.mean(ride.lon[ok])), ride.start.date(),
+                            (ride.start + timedelta(seconds=float(ride.t[-1]))).date(), archive=True)
+    except OSError as e:  # no network: the computer's sensor will do
+        log(f"{ride.name}: no weather archive ({e}); using the computer's temperature sensor")
+        return None
+    return hourly.at
 
 
 def _review_json(r, rd, z2_top, cool) -> dict:
