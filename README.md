@@ -7,29 +7,33 @@ actually hold, the power the road asks for is above your Zone 2 ceiling. Those
 minutes are the road's, not yours. z2analyzer sorts out which minutes are
 which, before and after the ride, so you don't have to read the curves.
 
-- **Before**: give it a GPX and a start time (or a temperature). It tells you
-  the share of the route you can ride in Zone 2, **in kilometres and in time**
-  (climbs weigh more in time than in distance, and time is what a training plan
-  counts), and lists the passages where Zone 2 is impossible.
-- **After**: give it the FIT file from your bike computer. It splits the minutes
-  you spent above Zone 2 between **the road** (impossible there, even in the
-  cool), **the heat** (possible in the cool, not that day) and **you** (it was
-  possible).
-- **Overnight**: point `z2analyzer watch` at the folder where your FIT files
-  land. Every new ride gets its verdict, and the two lines wait for you in
-  `morning.md`.
+It is a small web app you run on your own machine: open it, start a new
+analysis, drop a file, and the result page comes a few seconds later. Every
+analysis stays in the list.
+
+- **After a ride**: drop the FIT file from your bike computer. It splits the
+  minutes you spent above Zone 2 between **the road** (impossible there, even
+  in the cool), **the heat** (possible in the cool, not that day) and **you**
+  (it was possible).
+- **Before a ride**: drop a GPX and pick a start time (or the cool of your
+  rides, or a hot day). It tells you the share of the route you can ride in
+  Zone 2, **in kilometres and in time** (climbs weigh more in time than in
+  distance, and time is what a training plan counts), and lists the passages
+  where Zone 2 is impossible.
+- **Without lifting a finger**: point it at the folder where your FIT files
+  land (`--watch`). Each new ride is judged on its own and waits in the list.
+
+Each result opens with two lines:
 
 ```text
-$ z2analyzer review ride.fit --limits limits.json --terrain dem/ --z2-top 145
 119 min above Zone 2: 45 imposed by the road, 5 by the heat, 70 mine.
 Zone 2 was possible on 88 % of the kilometres, 72 % of the time.
 
-$ z2analyzer plan loop.gpx --limits limits.json --terrain dem/ --when "2026-10-24 08:30"
 Zone 2 is possible on 89 % of the kilometres, but 70 % of the time.
 11 passages where it is not: 6.8 km, 1 h 02 even at your slowest pace.
 ```
 
-*(the same 59.6 km loop: a ride on 4 October, then planned for a Saturday
+*(a ride on 4 October, then the same 59.6 km loop planned for a Saturday
 morning; more in [Results](#results))*
 
 ## How it works
@@ -87,20 +91,32 @@ pip install "z2analyzer[model] @ git+https://github.com/dsiacci/z2analyzer"
 # Once: terrain tiles and the bridges of your region (see Data below)
 z2analyzer structures --bbox 41.3 8.5 43.1 9.6 --out bridges.json
 
-# Your rides → one-second series without positions → your limits
+# Now and then: your rides → one-second series without positions → your limits
 z2analyzer prepare rides/*.fit --terrain dem/ --structures bridges.json --out prepared/
 z2analyzer validate prepared/ --out validate.json # how well each model predicts rides it never saw
 z2analyzer learn prepared/ --z2-top 145 --models hr=linear cadence=linear speed=tabpfn \
     --validation validate.json --out limits.json  # the winner of each table on your rides
 
-# Before a ride (temperature from the Météo-France forecast at the start time)
+# Every day: the web app, at http://127.0.0.1:8765/
 export Z2_MASS_KG=...                             # your mass: read from the environment, never stored or printed
+z2analyzer serve --limits limits.json --terrain dem/ --structures bridges.json --z2-top 145 --watch ~/rides
+```
+
+The analyses are kept in `./z2analyzer-data` (`--data`): for each one, the
+file you dropped, its verdict as JSON and its page. The app listens on this
+machine only; `--host` opens it to a private network (to reach it from your
+phone over Tailscale, say). It has no accounts: never open it to the internet.
+
+The same verdicts come from the command line, for scripts:
+
+```bash
+# Before a ride (temperature from the Météo-France forecast at the start time)
 z2analyzer plan route.gpx --limits limits.json --terrain dem/ --structures bridges.json --when "2026-10-24 08:30" --html plan.html
 
 # After a ride
 z2analyzer review ride.fit --limits limits.json --terrain dem/ --structures bridges.json --z2-top 145 --html ride.html
 
-# Or let it do that by itself: every new FIT in the folder, judged once (run it from cron, or add --every 30)
+# Every new FIT in a folder, judged once, its two lines in morning.md (from cron, or with --every 30)
 z2analyzer watch ~/rides --limits limits.json --terrain dem/ --structures bridges.json --z2-top 145
 ```
 
@@ -116,8 +132,9 @@ work out the rider's mass.
 
 ## What leaves your machine
 
-- **No ride file and no track.** FIT and GPX files are read locally; prepared
-  rides keep no positions; terrain tiles are read from disk.
+- **No ride file and no track.** FIT and GPX files are read locally (the web
+  app keeps the ones you drop in its data folder); prepared rides keep no
+  positions; terrain tiles are read from disk.
 - **Weather**: one point rounded to 0.1° (about 11 km) and a date, sent to
   Open-Meteo. `--edge-temp` uses your bike computer's sensor instead (warmed
   by the sun: up to 4 °C high on a hot ride).
@@ -125,11 +142,12 @@ work out the rider's mass.
   never for a track, sent to the OpenStreetMap Overpass API, once.
 - **TabPFN**: the weights are downloaded once from Hugging Face; it runs on the
   CPU, with no account, no API and no cost per analysis.
-- The local page (`--html`) loads nothing from anywhere: its fonts travel
-  inside it, there are no scripts and no map tiles (a tile server would learn
-  which area you looked at). Its figures (the route's shape, the profile, the
-  climbs) leave out the first and last 2 km, so a screenshot doesn't show
-  where you start; the numbers still count the whole route.
+- The pages (the web app's, and `--html`'s) load nothing from anywhere: their
+  fonts travel inside them, there are no map tiles (a tile server would learn
+  which area you looked at), and the only script is the app's one line that
+  shows the name of the file you chose. Their figures (the route's shape, the
+  profile, the climbs) leave out the first and last 2 km, so a screenshot
+  doesn't show where you start; the numbers still count the whole route.
 
 ## Data
 
